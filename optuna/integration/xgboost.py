@@ -55,7 +55,11 @@ class XGBoostPruningCallback(object):
         if context == "cv":
             # Remove a third element: the stddev of the metric across the cross-valdation folds.
             evaluation_result_list = [(key, metric) for key, metric, _ in evaluation_result_list]
-        current_score = dict(evaluation_result_list)[self._observation_key]
+        if self._observation_key:
+            current_score = dict(evaluation_result_list)[self._observation_key]
+        else:
+            key = evaluation_result_list[0][0]
+            current_score = dict(evaluation_result_list)[key]
         self._trial.report(current_score, step=env.iteration)
         if self._trial.should_prune():
             message = "Trial was pruned at iteration {}.".format(env.iteration)
