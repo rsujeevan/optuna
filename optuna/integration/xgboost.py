@@ -66,6 +66,10 @@ if _imports.is_successful() and use_callback_cls:
                     else:
                         evaluation_results[key] = scores[-1]
 
+            if self._observation_key is None:
+                # just use first key
+                self._observation_key = list(evaluation_results.keys())[0]
+
             current_score = evaluation_results[self._observation_key]
             self._trial.report(current_score, step=epoch)
             if self._trial.should_prune():
