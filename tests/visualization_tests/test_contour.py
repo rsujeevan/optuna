@@ -22,6 +22,13 @@ from optuna.visualization._contour import _generate_contour_subplot
 RANGE_TYPE = Union[Tuple[str, str], Tuple[float, float]]
 
 
+def test_target_is_none_and_study_is_multi_obj() -> None:
+
+    study = create_study(directions=["minimize", "minimize"])
+    with pytest.raises(ValueError):
+        plot_contour(study)
+
+
 @pytest.mark.parametrize(
     "params",
     [
@@ -88,7 +95,8 @@ def test_plot_contour(params: Optional[List[str]]) -> None:
 def test_plot_contour_customized_target(params: List[str]) -> None:
 
     study = prepare_study_with_trials()
-    figure = plot_contour(study, params=params, target=lambda t: t.params["param_d"])
+    with pytest.warns(UserWarning):
+        figure = plot_contour(study, params=params, target=lambda t: t.params["param_d"])
     for data in figure.data:
         if "z" in data:
             assert 4.0 in itertools.chain.from_iterable(data["z"])

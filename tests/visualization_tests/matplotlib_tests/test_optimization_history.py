@@ -5,6 +5,13 @@ from optuna.trial import Trial
 from optuna.visualization.matplotlib import plot_optimization_history
 
 
+def test_target_is_none_and_study_is_multi_obj() -> None:
+
+    study = create_study(directions=["minimize", "minimize"])
+    with pytest.raises(ValueError):
+        plot_optimization_history(study)
+
+
 @pytest.mark.parametrize("direction", ["minimize", "maximize"])
 def test_plot_optimization_history(direction: str) -> None:
     # Test with no trial.
@@ -30,7 +37,8 @@ def test_plot_optimization_history(direction: str) -> None:
     assert figure.has_data()
 
     # Test customized target.
-    figure = plot_optimization_history(study, target=lambda t: t.number)
+    with pytest.warns(UserWarning):
+        figure = plot_optimization_history(study, target=lambda t: t.number)
     assert figure.has_data()
 
     # Test customized target name.

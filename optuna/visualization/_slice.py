@@ -8,6 +8,7 @@ from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 from optuna.visualization._plotly_imports import _imports
+from optuna.visualization._utils import _check_plot_args
 from optuna.visualization._utils import _is_log_scale
 
 
@@ -57,16 +58,25 @@ def plot_slice(
         params:
             Parameter list to visualize. The default is all parameters.
         target:
-            A function to specify the value to display. If it is :obj:`None`, the objective values
-            are plotted.
+            A function to specify the value to display. If it is :obj:`None` and ``study`` is being
+            used for single-objective optimization, the objective values are plotted.
+
+            .. note::
+                Specify this argument if ``study`` is being used for multi-objective optimization.
         target_name:
             Target's name to display on the axis label.
 
     Returns:
         A :class:`plotly.graph_objs.Figure` object.
+
+    Raises:
+        :exc:`ValueError`:
+            If ``target`` is :obj:`None` and ``study`` is being used for multi-objective
+            optimization.
     """
 
     _imports.check()
+    _check_plot_args(study, target, target_name)
     return _get_slice_plot(study, params, target, target_name)
 
 

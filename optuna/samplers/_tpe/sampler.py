@@ -17,9 +17,9 @@ from optuna._study_direction import StudyDirection
 from optuna.distributions import BaseDistribution
 from optuna.exceptions import ExperimentalWarning
 from optuna.logging import get_logger
-from optuna.samplers import BaseSampler
-from optuna.samplers import IntersectionSearchSpace
-from optuna.samplers import RandomSampler
+from optuna.samplers._base import BaseSampler
+from optuna.samplers._random import RandomSampler
+from optuna.samplers._search_space import IntersectionSearchSpace
 from optuna.samplers._tpe.multivariate_parzen_estimator import _MultivariateParzenEstimator
 from optuna.samplers._tpe.parzen_estimator import _ParzenEstimator
 from optuna.samplers._tpe.parzen_estimator import _ParzenEstimatorParameters
@@ -229,6 +229,8 @@ class TPESampler(BaseSampler):
         self, study: Study, trial: FrozenTrial, search_space: Dict[str, BaseDistribution]
     ) -> Dict[str, Any]:
 
+        self._raise_error_if_multi_objective(study)
+
         if search_space == {}:
             return {}
 
@@ -268,6 +270,8 @@ class TPESampler(BaseSampler):
         param_name: str,
         param_distribution: BaseDistribution,
     ) -> Any:
+
+        self._raise_error_if_multi_objective(study)
 
         values, scores = _get_observation_pairs(study, param_name)
 
@@ -614,7 +618,7 @@ class TPESampler(BaseSampler):
 
         if size == (0,):
             return np.asarray([], dtype=float)
-        assert len(size)
+        assert size
 
         if probabilities.size == 1 and isinstance(probabilities[0], np.ndarray):
             probabilities = probabilities[0]

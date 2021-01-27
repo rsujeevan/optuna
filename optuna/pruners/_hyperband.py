@@ -270,6 +270,7 @@ class HyperbandPruner(BasePruner):
 
             _VALID_ATTRS = (
                 "get_trials",
+                "directions",
                 "direction",
                 "_storage",
                 "_study_id",
@@ -278,6 +279,7 @@ class HyperbandPruner(BasePruner):
                 "_bracket_id",
                 "sampler",
                 "trials",
+                "_is_multi_objective",
             )
 
             def __init__(self, study: "optuna.study.Study", bracket_id: int) -> None:

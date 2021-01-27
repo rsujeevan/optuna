@@ -11,6 +11,7 @@ from optuna.logging import get_logger
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
+from optuna.visualization._utils import _check_plot_args
 from optuna.visualization.matplotlib._matplotlib_imports import _imports
 from optuna.visualization.matplotlib._utils import _is_categorical
 from optuna.visualization.matplotlib._utils import _is_log_scale
@@ -39,23 +40,53 @@ def plot_slice(
     .. seealso::
         Please refer to :func:`optuna.visualization.plot_slice` for an example.
 
+    Example:
+
+        The following code snippet shows how to plot the parameter relationship as slice plot.
+
+        .. plot::
+
+            import optuna
+
+
+            def objective(trial):
+                x = trial.suggest_uniform("x", -100, 100)
+                y = trial.suggest_categorical("y", [-1, 0, 1])
+                return x ** 2 + y
+
+
+            sampler = optuna.samplers.TPESampler(seed=10)
+            study = optuna.create_study(sampler=sampler)
+            study.optimize(objective, n_trials=10)
+
+            optuna.visualization.matplotlib.plot_slice(study, params=["x", "y"])
+
     Args:
         study:
             A :class:`~optuna.study.Study` object whose trials are plotted for their target values.
         params:
             Parameter list to visualize. The default is all parameters.
         target:
-            A function to specify the value to display. If it is :obj:`None`, the objective values
-            are plotted.
+            A function to specify the value to display. If it is :obj:`None` and ``study`` is being
+            used for single-objective optimization, the objective values are plotted.
+
+            .. note::
+                Specify this argument if ``study`` is being used for multi-objective optimization.
         target_name:
             Target's name to display on the axis label.
 
 
     Returns:
         A :class:`matplotlib.axes.Axes` object.
+
+    Raises:
+        :exc:`ValueError`:
+            If ``target`` is :obj:`None` and ``study`` is being used for multi-objective
+            optimization.
     """
 
     _imports.check()
+    _check_plot_args(study, target, target_name)
     return _get_slice_plot(study, params, target, target_name)
 
 

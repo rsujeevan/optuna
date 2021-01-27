@@ -55,7 +55,9 @@ def get_tests_require() -> List[str]:
 def get_extras_require() -> Dict[str, List[str]]:
 
     requirements = {
-        "checking": ["black", "hacking", "isort", "mypy==0.782", "blackdoc"],
+        # TODO(HideakiImamura) Unpin mypy version after fixing "Duplicate modules" error in
+        # examples and tutorials.
+        "checking": ["black", "hacking", "isort", "mypy==0.790", "blackdoc"],
         "codecov": ["codecov", "pytest-cov"],
         "doctest": [
             "cma",
@@ -67,12 +69,9 @@ def get_extras_require() -> Dict[str, List[str]]:
             "mlflow",
         ],
         "document": [
-            # TODO(hvy): Unpin `sphinx` version after:
-            # https://github.com/sphinx-doc/sphinx/issues/8105.
-            "sphinx==3.0.4",
-            # As reported in: https://github.com/readthedocs/sphinx_rtd_theme/issues/949,
-            # `sphinx_rtd_theme` 0.5.0 is still not compatible with `sphinx` >= 3.0.
-            "sphinx_rtd_theme<0.5.0",
+            "sphinx",
+            "sphinx_rtd_theme",
+            "sphinx-copybutton",
             "sphinx-gallery",
             "sphinx-plotly-directive",
             "pillow",
@@ -80,12 +79,7 @@ def get_extras_require() -> Dict[str, List[str]]:
             "scikit-learn",
             "plotly>=4.0.0",  # optuna/visualization.
             "pandas",
-            # Read the Docs does not allow pip install with the -f, --find-links option. Therefore
-            # `torch` and `torchvision` in `document` are not pinned to the CPU only version since
-            # that would require this option. This increases the build time of the documentation.
-            # See https://github.com/optuna/optuna/pull/2065 for details.
-            "torch",
-            "torchvision",
+            "lightgbm",
         ],
         "example": [
             "catboost",
@@ -97,7 +91,7 @@ def get_extras_require() -> Dict[str, List[str]]:
             "nbval",
             "scikit-image",
             "scikit-learn>=0.19.0,<0.23.0",  # optuna/visualization/param_importances.py.
-            "xgboost<1.3",
+            "xgboost",
             "keras",
             "tensorflow>=2.0.0",
             "tensorflow-datasets",
@@ -107,22 +101,20 @@ def get_extras_require() -> Dict[str, List[str]]:
             "skorch",
             "stable-baselines3>=0.7.0",
             "catalyst",
-        ]
-        + (
-            ["torch==1.7.0", "torchvision==0.8.1", "torchaudio==0.7.0"]
-            if sys.platform == "darwin"
-            else ["torch==1.7.0+cpu", "torchvision==0.8.1+cpu", "torchaudio==0.7.0"]
-        )
-        + (
-            [
-                "allennlp==1.2.0",
-                "fastai",
-                "dask[dataframe]",
-                "dask-ml",
-            ]
-            if sys.version_info[:2] < (3, 8)
-            else ["fastai"]
-        ),
+            "torch==1.7.1 ; sys_platform=='darwin'",
+            "torch==1.7.1+cpu ; sys_platform!='darwin'",
+            "torchvision==0.8.2 ; sys_platform=='darwin'",
+            "torchvision==0.8.2+cpu ; sys_platform!='darwin'",
+            "torchaudio==0.7.2",
+            "allennlp",
+            "dask[dataframe]",
+            "dask-ml",
+            "botorch ; python_version>'3.6'",
+            "fastai",
+            "jax",
+            "optax",
+            "dm-haiku",
+        ],
         "experimental": ["redis"],
         "testing": [
             # TODO(toshihikoyanase): Remove the version constraint after resolving the issue
@@ -141,7 +133,7 @@ def get_extras_require() -> Dict[str, List[str]]:
             "pytest",
             "scikit-learn>=0.19.0,<0.23.0",
             "scikit-optimize",
-            "xgboost<1.3",
+            "xgboost",
             "keras",
             "tensorflow",
             "tensorflow-datasets",
@@ -149,13 +141,15 @@ def get_extras_require() -> Dict[str, List[str]]:
             "pytorch-lightning>=1.0.2",
             "skorch",
             "catalyst",
-        ]
-        + (
-            ["torch==1.7.0", "torchvision==0.8.1", "torchaudio==0.7.0"]
-            if sys.platform == "darwin"
-            else ["torch==1.7.0+cpu", "torchvision==0.8.1+cpu", "torchaudio==0.7.0"]
-        )
-        + (["allennlp==1.2.0", "fastai"] if sys.version_info[:2] < (3, 8) else ["fastai"]),
+            "torch==1.7.1 ; sys_platform=='darwin'",
+            "torch==1.7.1+cpu ; sys_platform!='darwin'",
+            "torchvision==0.8.2 ; sys_platform=='darwin'",
+            "torchvision==0.8.2+cpu ; sys_platform!='darwin'",
+            "torchaudio==0.7.2",
+            "allennlp",
+            "botorch ; python_version>'3.6'",
+            "fastai",
+        ],
         "tests": ["fakeredis", "pytest"],
         "optional": [
             "bokeh<2.0.0",  # optuna/cli.py, optuna/dashboard.py.
@@ -177,7 +171,7 @@ def get_extras_require() -> Dict[str, List[str]]:
             "pandas",
             "scikit-learn>=0.19.0,<0.23.0",
             "scikit-optimize",
-            "xgboost<1.3",
+            "xgboost",
             "keras",
             "tensorflow",
             "tensorflow-datasets",
@@ -185,13 +179,15 @@ def get_extras_require() -> Dict[str, List[str]]:
             "pytorch-lightning>=1.0.2",
             "skorch",
             "catalyst",
-        ]
-        + (
-            ["torch==1.7.0", "torchvision==0.8.1", "torchaudio==0.7.0"]
-            if sys.platform == "darwin"
-            else ["torch==1.7.0+cpu", "torchvision==0.8.1+cpu", "torchaudio==0.7.0"]
-        )
-        + (["allennlp==1.2.0", "fastai"] if sys.version_info[:2] < (3, 8) else ["fastai"]),
+            "torch==1.7.1 ; sys_platform=='darwin'",
+            "torch==1.7.1+cpu ; sys_platform!='darwin'",
+            "torchvision==0.8.2 ; sys_platform=='darwin'",
+            "torchvision==0.8.2+cpu ; sys_platform!='darwin'",
+            "torchaudio==0.7.2",
+            "allennlp",
+            "botorch ; python_version>'3.6'",
+            "fastai",
+        ],
     }
 
     return requirements
