@@ -65,7 +65,7 @@ class LightGBMPruningCallback(object):
     """
 
     def __init__(
-        self, trial: optuna.trial.Trial, metric: str, valid_name: str = "valid_0"
+        self, trial: optuna.trial.Trial, metric=None, valid_name=None
     ) -> None:
 
         _imports.check()
@@ -86,27 +86,37 @@ class LightGBMPruningCallback(object):
         else:
             target_valid_name = self._valid_name
 
+        if target_valid_name is None:
+            # just use first key
+            target_valid_name = env.evaluation_result_list[0][0]
+        if self._metric is None:
+            # just use first key
+            target_valid_name = env.evaluation_result_list[0][1]
+
         for evaluation_result in env.evaluation_result_list:
             valid_name, metric, current_score, is_higher_better = evaluation_result[:4]
             if valid_name != target_valid_name or metric != self._metric:
                 continue
 
+            sig = 1.0
             if is_higher_better:
                 if self._trial.study.direction != optuna.study.StudyDirection.MAXIMIZE:
-                    raise ValueError(
-                        "The intermediate values are inconsistent with the objective values in "
-                        "terms of study directions. Please specify a metric to be minimized for "
-                        "LightGBMPruningCallback."
-                    )
+                    sig = -1.0
+                    #raise ValueError(
+                    #    "The intermediate values are inconsistent with the objective values in "
+                    #    "terms of study directions. Please specify a metric to be minimized for "
+                    #    "LightGBMPruningCallback."
+                    #)
             else:
                 if self._trial.study.direction != optuna.study.StudyDirection.MINIMIZE:
-                    raise ValueError(
-                        "The intermediate values are inconsistent with the objective values in "
-                        "terms of study directions. Please specify a metric to be maximized for "
-                        "LightGBMPruningCallback."
-                    )
+                    sig = -1.0
+                    #raise ValueError(
+                    #    "The intermediate values are inconsistent with the objective values in "
+                    #    "terms of study directions. Please specify a metric to be maximized for "
+                    #    "LightGBMPruningCallback."
+                    #)
 
-            self._trial.report(current_score, step=env.iteration)
+            self._trial.report(sig*current_score, step=env.iteration)
             if self._trial.should_prune():
                 message = "Trial was pruned at iteration {}.".format(env.iteration)
                 raise optuna.TrialPruned(message)
