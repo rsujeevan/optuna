@@ -38,10 +38,11 @@ if _imports.is_successful() and use_callback_cls:
     class XGBoostPruningCallback(xgb.callback.TrainingCallback):  # type: ignore
         __doc__ = _doc
 
-        def __init__(self, trial: optuna.trial.Trial, observation_key: str) -> None:
+        def __init__(self, trial: optuna.trial.Trial, observation_key: str, raise_type=None) -> None:
             self._trial = trial
             self._observation_key = observation_key
             self._is_cv = False
+            self._raise_type = raise_type
 
         def before_training(self, model: Any) -> Any:
             # The use of Any type is due to _PackedBooster is not yet being exposed
@@ -72,9 +73,14 @@ if _imports.is_successful() and use_callback_cls:
 
             current_score = evaluation_results[self._observation_key]
             self._trial.report(current_score, step=epoch)
+            self._trial.was_pruned = False
             if self._trial.should_prune():
                 message = "Trial was pruned at iteration {}.".format(epoch)
-                raise optuna.TrialPruned(message)
+                self._trial.was_pruned = True
+                if self._raise_type is None or self._raise_type == "prune":
+                    raise optuna.TrialPruned(message)
+                else:
+                    return True  # just early stop
             # The training should not stop.
             return False
 

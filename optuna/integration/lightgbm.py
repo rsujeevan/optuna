@@ -7,7 +7,7 @@ from optuna.integration import _lightgbm_tuner as tuner
 
 with try_import() as _imports:
     import lightgbm as lgb  # NOQA
-    from lightgbm.callback import CallbackEnv  # NOQA
+    from lightgbm.callback import CallbackEnv, EarlyStopException  # NOQA
 
 # Attach lightgbm API.
 if _imports.is_successful():
@@ -65,7 +65,7 @@ class LightGBMPruningCallback(object):
     """
 
     def __init__(
-        self, trial: optuna.trial.Trial, metric=None, valid_name=None
+        self, trial: optuna.trial.Trial, metric=None, valid_name=None, raise_type=None,
     ) -> None:
 
         _imports.check()
@@ -73,6 +73,7 @@ class LightGBMPruningCallback(object):
         self._trial = trial
         self._valid_name = valid_name
         self._metric = metric
+        self._raise_type = raise_type
 
     def __call__(self, env: "CallbackEnv") -> None:
 
@@ -117,9 +118,14 @@ class LightGBMPruningCallback(object):
                     #)
 
             self._trial.report(sig*current_score, step=env.iteration)
+            self._trial.was_pruned = False
             if self._trial.should_prune():
                 message = "Trial was pruned at iteration {}.".format(env.iteration)
-                raise optuna.TrialPruned(message)
+                self._trial.was_pruned = True
+                if self._raise_type is None or self._raise_type == "prune":
+                    raise optuna.TrialPruned(message)
+                else:
+                    raise EarlyStopException(env.iteration, env.evaluation_result_list)
 
             return None
 
