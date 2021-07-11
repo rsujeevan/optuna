@@ -567,6 +567,44 @@ def test_calculate_nondomination_rank() -> None:
     assert ranks == [0, 1, 0, 2, 0, 1]
 
 
+def test_calculate_weights_below() -> None:
+    sampler = MOTPESampler()
+
+    # Two samples.
+    weights_below = sampler._calculate_weights_below(
+        np.array([[0.2, 0.5], [0.9, 0.4], [1, 1]]), np.array([0, 1])
+    )
+    assert len(weights_below) == 2
+    assert weights_below[0] > weights_below[1]
+    assert sum(weights_below) > 0
+
+    # Two equally contributed samples.
+    weights_below = sampler._calculate_weights_below(
+        np.array([[0.2, 0.8], [0.8, 0.2], [1, 1]]), np.array([0, 1])
+    )
+    assert len(weights_below) == 2
+    assert weights_below[0] == weights_below[1]
+    assert sum(weights_below) > 0
+
+    # Duplicated samples.
+    weights_below = sampler._calculate_weights_below(
+        np.array([[0.2, 0.8], [0.2, 0.8], [1, 1]]), np.array([0, 1])
+    )
+    assert len(weights_below) == 2
+    assert weights_below[0] == weights_below[1]
+    assert sum(weights_below) > 0
+
+    # Three samples.
+    weights_below = sampler._calculate_weights_below(
+        np.array([[0.3, 0.3], [0.2, 0.8], [0.8, 0.2], [1, 1]]), np.array([0, 1, 2])
+    )
+    assert len(weights_below) == 3
+    assert weights_below[0] > weights_below[1]
+    assert weights_below[0] > weights_below[2]
+    assert weights_below[1] == weights_below[2]
+    assert sum(weights_below) > 0
+
+
 def test_solve_hssp() -> None:
     sampler = MOTPESampler(seed=0)
 
@@ -580,7 +618,7 @@ def test_solve_hssp() -> None:
         truth = 0.0
         for subset in itertools.permutations(test_case, subset_size):
             truth = max(truth, sampler._compute_hypervolume(np.asarray(subset), r))
-        indices = sampler._solve_hssp(test_case, list(range(len(test_case))), subset_size, r)
+        indices = sampler._solve_hssp(test_case, np.arange(len(test_case)), subset_size, r)
         approx = sampler._compute_hypervolume(test_case[indices], r)
         assert approx / truth > 0.6321  # 1 - 1/e
 
@@ -594,9 +632,39 @@ def test_solve_hssp() -> None:
         truth = 0
         for subset in itertools.permutations(test_case, subset_size):
             truth = max(truth, sampler._compute_hypervolume(np.asarray(subset), r))
-        indices = sampler._solve_hssp(test_case, list(range(len(test_case))), subset_size, r)
+        indices = sampler._solve_hssp(test_case, np.arange(len(test_case)), subset_size, r)
         approx = sampler._compute_hypervolume(test_case[indices], r)
         assert approx / truth > 0.6321  # 1 - 1/e
+
+
+def test_cache() -> None:
+    n = 10
+    sampler = MOTPESampler(seed=0, n_startup_trials=n)
+
+    def objective(trial: optuna.trial.Trial) -> Tuple[float, float]:
+        x = trial.suggest_float("x", 0, 5)
+
+        if trial._trial_id == n:
+            assert n in sampler._split_cache
+            assert n in sampler._weights_below
+        else:
+            assert n not in sampler._split_cache
+            assert n not in sampler._weights_below
+
+        y = trial.suggest_float("y", 0, 3)
+        v0 = 4 * x ** 2 + 4 * y ** 2
+        v1 = (x - 5) ** 2 + (y - 5) ** 2
+        return v0, v1
+
+    study = optuna.create_study(directions=["minimize", "maximize"], sampler=sampler)
+
+    assert n not in sampler._split_cache
+    assert n not in sampler._weights_below
+
+    study.optimize(objective, n_trials=n + 1)
+
+    assert n not in sampler._split_cache
+    assert n not in sampler._weights_below
 
 
 def frozen_trial_factory(
@@ -649,3 +717,13 @@ def test_reseed_rng() -> None:
         sampler.reseed_rng()
         assert mock_object.call_count == 1
         assert original_seed != sampler._rng.seed
+
+
+def test_call_after_trial_of_mo_random_sampler() -> None:
+    sampler = MOTPESampler()
+    study = optuna.create_study(sampler=sampler)
+    with patch.object(
+        sampler._mo_random_sampler, "after_trial", wraps=sampler._mo_random_sampler.after_trial
+    ) as mock_object:
+        study.optimize(lambda _: 1.0, n_trials=1)
+        assert mock_object.call_count == 1

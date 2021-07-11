@@ -3,6 +3,7 @@ from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
+from unittest.mock import patch
 import warnings
 
 import pytest
@@ -345,6 +346,49 @@ def test_fast_non_dominated_sort_constrained_feasible_infeasible() -> None:
     ]
 
 
+def test_fast_non_dominated_sort_missing_constraint_values() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", optuna.exceptions.ExperimentalWarning)
+        sampler = NSGAIISampler(constraints_func=lambda _: [0])
+
+    # Single objective.
+    directions = [StudyDirection.MINIMIZE]
+    trials = [
+        _create_frozen_trial(0, [10]),
+        _create_frozen_trial(1, [20]),
+        _create_frozen_trial(2, [20], [0]),
+        _create_frozen_trial(3, [20], [1]),
+        _create_frozen_trial(4, [30], [-1]),
+    ]
+    with pytest.warns(UserWarning):
+        population_per_rank = sampler._fast_non_dominated_sort(trials, directions)
+    assert [{t.number for t in population} for population in population_per_rank] == [
+        {2},
+        {4},
+        {3},
+        {0},
+        {1},
+    ]
+
+    # Two objectives.
+    directions = [StudyDirection.MAXIMIZE, StudyDirection.MAXIMIZE]
+    trials = [
+        _create_frozen_trial(0, [50, 30]),
+        _create_frozen_trial(1, [30, 50]),
+        _create_frozen_trial(2, [20, 20], [3, 3]),
+        _create_frozen_trial(3, [30, 10], [0, -1]),
+        _create_frozen_trial(4, [15, 15], [4, 4]),
+    ]
+    with pytest.warns(UserWarning):
+        population_per_rank = sampler._fast_non_dominated_sort(trials, directions)
+    assert [{t.number for t in population} for population in population_per_rank] == [
+        {3},
+        {2},
+        {4},
+        {0, 1},
+    ]
+
+
 def test_crowding_distance_sort() -> None:
     trials = [
         _create_frozen_trial(0, [5]),
@@ -423,3 +467,13 @@ def _create_frozen_trial(
     trial.number = number
     trial._trial_id = number
     return trial
+
+
+def test_call_after_trial_of_random_sampler() -> None:
+    sampler = NSGAIISampler()
+    study = optuna.create_study(sampler=sampler)
+    with patch.object(
+        sampler._random_sampler, "after_trial", wraps=sampler._random_sampler.after_trial
+    ) as mock_object:
+        study.optimize(lambda _: 1.0, n_trials=1)
+        assert mock_object.call_count == 1
