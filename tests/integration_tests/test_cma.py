@@ -9,15 +9,12 @@ import cma
 import pytest
 
 import optuna
-from optuna._study_direction import StudyDirection
 from optuna.distributions import BaseDistribution
 from optuna.distributions import CategoricalDistribution
-from optuna.distributions import DiscreteUniformDistribution
-from optuna.distributions import IntLogUniformDistribution
-from optuna.distributions import IntUniformDistribution
-from optuna.distributions import LogUniformDistribution
-from optuna.distributions import UniformDistribution
+from optuna.distributions import FloatDistribution
+from optuna.distributions import IntDistribution
 from optuna.integration.cma import _Optimizer
+from optuna.study._study_direction import StudyDirection
 from optuna.testing.distribution import UnsupportedDistribution
 from optuna.testing.sampler import DeterministicRelativeSampler
 from optuna.trial import FrozenTrial
@@ -50,8 +47,8 @@ class TestPyCmaSampler(object):
             )
             assert mock_obj.mock_calls[0] == call(
                 {
-                    "x": IntUniformDistribution(low=-1, high=1),
-                    "y": IntUniformDistribution(low=-1, high=1),
+                    "x": IntDistribution(low=-1, high=1),
+                    "y": IntDistribution(low=-1, high=1),
                 },
                 {"x": 0, "y": 0},
                 0.1,
@@ -68,21 +65,6 @@ class TestPyCmaSampler(object):
         assert 0 < seed
 
         assert isinstance(sampler._independent_sampler, optuna.samplers.RandomSampler)
-
-    @staticmethod
-    def test_reseed_rng() -> None:
-        sampler = optuna.integration.PyCmaSampler()
-        original_seed = sampler._cma_opts["seed"]
-        sampler._independent_sampler.reseed_rng()
-
-        with patch.object(
-            sampler._independent_sampler,
-            "reseed_rng",
-            wraps=sampler._independent_sampler.reseed_rng,
-        ) as mock_object:
-            sampler.reseed_rng()
-            assert mock_object.call_count == 1
-            assert original_seed != sampler._cma_opts["seed"]
 
     @staticmethod
     def test_infer_relative_search_space_1d() -> None:
@@ -163,12 +145,12 @@ class TestOptimizer(object):
 
         return {
             "c": CategoricalDistribution(("a", "b")),
-            "d": DiscreteUniformDistribution(-1, 9, 2),
-            "i": IntUniformDistribution(-1, 1),
-            "ii": IntUniformDistribution(-1, 3, 2),
-            "il": IntLogUniformDistribution(2, 16),
-            "l": LogUniformDistribution(0.001, 0.1),
-            "u": UniformDistribution(-2, 2),
+            "d": FloatDistribution(-1, 9, step=2),
+            "i": IntDistribution(-1, 1),
+            "ii": IntDistribution(-1, 3, step=2),
+            "il": IntDistribution(2, 16, log=True),
+            "l": FloatDistribution(0.001, 0.1, log=True),
+            "u": FloatDistribution(-2, 2),
         }
 
     @staticmethod
@@ -258,7 +240,7 @@ class TestOptimizer(object):
 
         trials = [_create_frozen_trial(x0, search_space)]
         distributions = trials[0].distributions.copy()
-        distributions["additional"] = UniformDistribution(0, 100)
+        distributions["additional"] = FloatDistribution(0, 100)
         trials.append(_create_frozen_trial(x0, distributions, number=1))
         assert 1 == optimizer.tell(trials, StudyDirection.MINIMIZE)
 
@@ -276,7 +258,7 @@ class TestOptimizer(object):
         optimizer = _Optimizer(search_space, x0, 0.2, None, {"popsize": 3, "seed": 1})
         last_told = optimizer.tell(trials, StudyDirection.MINIMIZE)
         distributions = trials[0].distributions.copy()
-        distributions["additional"] = UniformDistribution(0, 100)
+        distributions["additional"] = FloatDistribution(0, 100)
         trials.append(_create_frozen_trial(x0, distributions, number=len(trials)))
         params1 = optimizer.ask(trials, last_told)
 
@@ -311,12 +293,12 @@ class TestOptimizer(object):
         assert optimizer._is_compatible(trial)
 
         # Compatible.
-        trial = _create_frozen_trial(x0, dict(search_space, u=UniformDistribution(-10, 10)))
+        trial = _create_frozen_trial(x0, dict(search_space, u=FloatDistribution(-10, 10)))
         assert optimizer._is_compatible(trial)
 
         # Compatible.
         trial = _create_frozen_trial(
-            dict(x0, unknown=7), dict(search_space, unknown=UniformDistribution(0, 10))
+            dict(x0, unknown=7), dict(search_space, unknown=FloatDistribution(0, 10))
         )
         assert optimizer._is_compatible(trial)
 
@@ -330,12 +312,12 @@ class TestOptimizer(object):
 
         # Incompatible (the value of 'u' is out of range).
         trial = _create_frozen_trial(
-            dict(x0, u=20), dict(search_space, u=UniformDistribution(-100, 100))
+            dict(x0, u=20), dict(search_space, u=FloatDistribution(-100, 100))
         )
         assert not optimizer._is_compatible(trial)
 
         # Error (different distribution class).
-        trial = _create_frozen_trial(x0, dict(search_space, u=IntUniformDistribution(-2, 2)))
+        trial = _create_frozen_trial(x0, dict(search_space, u=IntDistribution(-2, 2)))
         with pytest.raises(ValueError):
             optimizer._is_compatible(trial)
 

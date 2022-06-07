@@ -10,7 +10,8 @@ import warnings
 import numpy
 
 from optuna import logging
-from optuna._experimental import experimental
+from optuna._experimental import experimental_class
+from optuna._experimental import experimental_func
 from optuna._imports import try_import
 from optuna._transform import _SearchSpaceTransform
 from optuna.distributions import BaseDistribution
@@ -34,7 +35,7 @@ with try_import() as _imports:
     from botorch.models.transforms.outcome import Standardize
     from botorch.optim import optimize_acqf
     from botorch.sampling.samplers import SobolQMCNormalSampler
-    from botorch.utils.multi_objective.box_decomposition import NondominatedPartitioning
+    from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
     from botorch.utils.multi_objective.scalarization import get_chebyshev_scalarization
     from botorch.utils.sampling import sample_simplex
     from botorch.utils.transforms import normalize
@@ -46,7 +47,7 @@ with try_import() as _imports:
 _logger = logging.get_logger(__name__)
 
 
-@experimental("2.4.0")
+@experimental_func("2.4.0")
 def qei_candidates_func(
     train_x: "torch.Tensor",
     train_obj: "torch.Tensor",
@@ -76,8 +77,8 @@ def qei_candidates_func(
             constraints. A constraint is violated if strictly larger than 0. If no constraints are
             involved in the optimization, this argument will be :obj:`None`.
         bounds:
-            Search space bounds. A ``torch.Tensor`` of shape ``(n_params, 2)``. ``n_params`` is
-            identical to that of ``train_x``. The first and the second column correspond to the
+            Search space bounds. A ``torch.Tensor`` of shape ``(2, n_params)``. ``n_params`` is
+            identical to that of ``train_x``. The first and the second rows correspond to the
             lower and upper bounds for each parameter respectively.
 
     Returns:
@@ -148,7 +149,7 @@ def qei_candidates_func(
     return candidates
 
 
-@experimental("2.4.0")
+@experimental_func("2.4.0")
 def qehvi_candidates_func(
     train_x: "torch.Tensor",
     train_obj: "torch.Tensor",
@@ -234,7 +235,7 @@ def qehvi_candidates_func(
     return candidates
 
 
-@experimental("2.4.0")
+@experimental_func("2.4.0")
 def qparego_candidates_func(
     train_x: "torch.Tensor",
     train_obj: "torch.Tensor",
@@ -326,7 +327,7 @@ def _get_default_candidates_func(
 
 # TODO(hvy): Allow utilizing GPUs via some parameter, not having to rewrite the callback
 # functions.
-@experimental("2.4.0")
+@experimental_class("2.4.0")
 class BoTorchSampler(BaseSampler):
     """A sampler that uses BoTorch, a Bayesian optimization library built on top of PyTorch.
 
@@ -385,14 +386,16 @@ class BoTorchSampler(BaseSampler):
     def __init__(
         self,
         *,
-        candidates_func: Callable[
-            [
+        candidates_func: Optional[
+            Callable[
+                [
+                    "torch.Tensor",
+                    "torch.Tensor",
+                    Optional["torch.Tensor"],
+                    "torch.Tensor",
+                ],
                 "torch.Tensor",
-                "torch.Tensor",
-                Optional["torch.Tensor"],
-                "torch.Tensor",
-            ],
-            "torch.Tensor",
+            ]
         ] = None,
         constraints_func: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
         n_startup_trials: int = 10,
@@ -420,7 +423,16 @@ class BoTorchSampler(BaseSampler):
             # because `InMemoryStorage.create_new_study` always returns the same study ID.
             raise RuntimeError("BoTorchSampler cannot handle multiple studies.")
 
-        return self._search_space.calculate(study, ordered_dict=True)  # type: ignore
+        search_space: Dict[str, BaseDistribution] = OrderedDict()
+        for name, distribution in self._search_space.calculate(study, ordered_dict=True).items():
+            if distribution.single():
+                # built-in `candidates_func` cannot handle distributions that contain just a
+                # single value, so we skip them. Note that the parameter values for such
+                # distributions are sampled in `Trial`.
+                continue
+            search_space[name] = distribution
+
+        return search_space
 
     def sample_relative(
         self,

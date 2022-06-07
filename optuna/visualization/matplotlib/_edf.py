@@ -1,4 +1,3 @@
-import itertools
 from typing import Callable
 from typing import cast
 from typing import List
@@ -8,12 +7,13 @@ from typing import Union
 
 import numpy as np
 
-from optuna._experimental import experimental
+from optuna._experimental import experimental_func
 from optuna.logging import get_logger
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 from optuna.visualization._utils import _check_plot_args
+from optuna.visualization._utils import _filter_nonfinite
 from optuna.visualization.matplotlib._matplotlib_imports import _imports
 
 
@@ -24,7 +24,7 @@ if _imports.is_successful():
 _logger = get_logger(__name__)
 
 
-@experimental("2.2.0")
+@experimental_func("2.2.0")
 def plot_edf(
     study: Union[Study, Sequence[Study]],
     *,
@@ -32,6 +32,8 @@ def plot_edf(
     target_name: str = "Objective Value",
 ) -> "Axes":
     """Plot the objective value EDF (empirical distribution function) of a study with Matplotlib.
+
+    Note that only the complete trials are considered when plotting the EDF.
 
     .. seealso::
         Please refer to :func:`optuna.visualization.plot_edf` for an example,
@@ -97,11 +99,6 @@ def plot_edf(
 
     Returns:
         A :class:`matplotlib.axes.Axes` object.
-
-    Raises:
-        :exc:`ValueError`:
-            If ``target`` is :obj:`None` and ``study`` is being used for multi-objective
-            optimization.
     """
 
     _imports.check()
@@ -135,21 +132,6 @@ def _get_edf_plot(
         _logger.warning("There are no studies.")
         return ax
 
-    all_trials = list(
-        itertools.chain.from_iterable(
-            (
-                trial
-                for trial in study.get_trials(deepcopy=False)
-                if trial.state == TrialState.COMPLETE
-            )
-            for study in studies
-        )
-    )
-
-    if len(all_trials) == 0:
-        _logger.warning("There are no complete trials.")
-        return ax
-
     if target is None:
 
         def _target(t: FrozenTrial) -> float:
@@ -157,22 +139,26 @@ def _get_edf_plot(
 
         target = _target
 
-    min_x_value = min(target(trial) for trial in all_trials)
-    max_x_value = max(target(trial) for trial in all_trials)
+    all_values: List[np.ndarray] = []
+    for study in studies:
+        trials = _filter_nonfinite(
+            study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target
+        )
+
+        values = np.array([target(trial) for trial in trials])
+        all_values.append(values)
+
+    if all(len(values) == 0 for values in all_values):
+        _logger.warning("There are no complete trials.")
+        return ax
+
+    min_x_value = np.min(np.concatenate(all_values))
+    max_x_value = np.max(np.concatenate(all_values))
     x_values = np.linspace(min_x_value, max_x_value, 100)
 
     # Draw multiple line plots.
-    for i, study in enumerate(studies):
-        values = np.asarray(
-            [
-                target(trial)
-                for trial in study.get_trials(deepcopy=False)
-                if trial.state == TrialState.COMPLETE
-            ]
-        )
-
+    for i, (values, study) in enumerate(zip(all_values, studies)):
         y_values = np.sum(values[:, np.newaxis] <= x_values, axis=0) / values.size
-
         ax.plot(x_values, y_values, color=cmap(i), alpha=0.7, label=study.study_name)
 
     if len(studies) >= 2:

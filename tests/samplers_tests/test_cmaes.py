@@ -58,7 +58,7 @@ def test_init_cmaes_opts(use_separable_cma: bool, cma_class_str: str) -> None:
         assert np.array_equal(actual_kwargs["mean"], np.array([0, 0]))
         assert actual_kwargs["sigma"] == 0.1
         assert np.allclose(actual_kwargs["bounds"], np.array([(-1, 1), (-1, 1)]))
-        assert actual_kwargs["seed"] == np.random.RandomState(1).randint(1, 2 ** 32)
+        assert actual_kwargs["seed"] == np.random.RandomState(1).randint(1, 2**32)
         assert actual_kwargs["n_max_resampling"] == 10 * 2
         assert actual_kwargs["population_size"] is None
 
@@ -69,7 +69,7 @@ def test_warm_starting_cmaes(mock_func_ws: MagicMock) -> None:
     def objective(trial: optuna.Trial) -> float:
         x = trial.suggest_float("x", -10, 10)
         y = trial.suggest_float("y", -10, 10)
-        return x ** 2 + y
+        return x**2 + y
 
     source_study = optuna.create_study()
     source_study.optimize(objective, 20)
@@ -89,7 +89,7 @@ def test_warm_starting_cmaes_maximize(mock_func_ws: MagicMock) -> None:
         x = trial.suggest_float("x", -10, 10)
         y = trial.suggest_float("y", -10, 10)
         # Objective values are negative.
-        return -(x ** 2) - (y - 5) ** 2
+        return -(x**2) - (y - 5) ** 2
 
     source_study = optuna.create_study(direction="maximize")
     source_study.optimize(objective, 20)
@@ -208,16 +208,6 @@ def test_sample_relative_n_startup_trials() -> None:
         study.optimize(objective, n_trials=4, catch=(Exception,))
         assert mock_independent.call_count == 6  # The objective function has two parameters.
         assert mock_relative.call_count == 4
-
-
-def test_reseed_rng() -> None:
-    sampler = optuna.samplers.CmaEsSampler()
-
-    with patch.object(
-        sampler._independent_sampler, "reseed_rng", wraps=sampler._independent_sampler.reseed_rng
-    ) as mock_object:
-        sampler.reseed_rng()
-        assert mock_object.call_count == 1
 
 
 def test_get_trials() -> None:
@@ -387,7 +377,7 @@ def test_call_after_trial_of_base_sampler() -> None:
 def test_is_compatible_search_space() -> None:
     transform = _SearchSpaceTransform(
         {
-            "x0": optuna.distributions.UniformDistribution(2, 3),
+            "x0": optuna.distributions.FloatDistribution(2, 3),
             "x1": optuna.distributions.CategoricalDistribution(["foo", "bar", "baz", "qux"]),
         }
     )
@@ -396,7 +386,7 @@ def test_is_compatible_search_space() -> None:
         transform,
         {
             "x1": optuna.distributions.CategoricalDistribution(["foo", "bar", "baz", "qux"]),
-            "x0": optuna.distributions.UniformDistribution(2, 3),
+            "x0": optuna.distributions.FloatDistribution(2, 3),
         },
     )
 
@@ -404,7 +394,7 @@ def test_is_compatible_search_space() -> None:
     assert not optuna.samplers._cmaes._is_compatible_search_space(
         transform,
         {
-            "x0": optuna.distributions.UniformDistribution(2, 3),
+            "x0": optuna.distributions.FloatDistribution(2, 3),
             "foo": optuna.distributions.CategoricalDistribution(["foo", "bar", "baz", "qux"]),
         },
     )
@@ -413,9 +403,9 @@ def test_is_compatible_search_space() -> None:
     assert not optuna.samplers._cmaes._is_compatible_search_space(
         transform,
         {
-            "x0": optuna.distributions.UniformDistribution(2, 3),
+            "x0": optuna.distributions.FloatDistribution(2, 3),
             "x1": optuna.distributions.CategoricalDistribution(["foo", "bar", "baz", "qux"]),
-            "x2": optuna.distributions.DiscreteUniformDistribution(2, 3, q=0.1),
+            "x2": optuna.distributions.FloatDistribution(2, 3, step=0.1),
         },
     )
 

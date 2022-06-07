@@ -1,5 +1,4 @@
 from collections import defaultdict
-import math
 from typing import Callable
 from typing import cast
 from typing import DefaultDict
@@ -8,16 +7,19 @@ from typing import Optional
 
 import numpy as np
 
-from optuna._experimental import experimental
-from optuna._study_direction import StudyDirection
+from optuna._experimental import experimental_func
 from optuna.logging import get_logger
 from optuna.study import Study
+from optuna.study._study_direction import StudyDirection
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 from optuna.visualization._utils import _check_plot_args
+from optuna.visualization._utils import _filter_nonfinite
+from optuna.visualization._utils import _get_skipped_trial_numbers
 from optuna.visualization.matplotlib._matplotlib_imports import _imports
 from optuna.visualization.matplotlib._utils import _is_categorical
 from optuna.visualization.matplotlib._utils import _is_log_scale
+from optuna.visualization.matplotlib._utils import _is_numerical
 
 
 if _imports.is_successful():
@@ -28,7 +30,7 @@ if _imports.is_successful():
 _logger = get_logger(__name__)
 
 
-@experimental("2.2.0")
+@experimental_func("2.2.0")
 def plot_parallel_coordinate(
     study: Study,
     params: Optional[List[str]] = None,
@@ -37,6 +39,8 @@ def plot_parallel_coordinate(
     target_name: str = "Objective Value",
 ) -> "Axes":
     """Plot the high-dimensional parameter relationships in a study with Matplotlib.
+
+    Note that, if a parameter contains missing values, a trial with missing values is not plotted.
 
     .. seealso::
         Please refer to :func:`optuna.visualization.plot_parallel_coordinate` for an example.
@@ -77,11 +81,6 @@ def plot_parallel_coordinate(
 
     Returns:
         A :class:`matplotlib.axes.Axes` object.
-
-    Raises:
-        :exc:`ValueError`:
-            If ``target`` is :obj:`None` and ``study`` is being used for multi-objective
-            optimization.
     """
 
     _imports.check()
@@ -114,8 +113,9 @@ def _get_parallel_coordinate_plot(
     ax.spines["bottom"].set_visible(False)
 
     # Prepare data for plotting.
-    trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE]
-
+    trials = _filter_nonfinite(
+        study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target
+    )
     if len(trials) == 0:
         _logger.warning("Your study does not have any completed trials.")
         return ax
@@ -128,7 +128,14 @@ def _get_parallel_coordinate_plot(
         all_params = set(params)
     sorted_params = sorted(all_params)
 
-    obj_org = [target(t) for t in trials]
+    skipped_trial_numbers = _get_skipped_trial_numbers(trials, sorted_params)
+
+    obj_org = [target(t) for t in trials if t.number not in skipped_trial_numbers]
+
+    if len(obj_org) == 0:
+        _logger.warning("Your study has only completed trials with missing parameters.")
+        return ax
+
     obj_min = min(obj_org)
     obj_max = max(obj_org)
     obj_w = obj_max - obj_min
@@ -137,25 +144,34 @@ def _get_parallel_coordinate_plot(
     cat_param_names = []
     cat_param_values = []
     cat_param_ticks = []
-    log_param_names = []
     param_values = []
     var_names = [target_name]
-    for p_name in sorted_params:
-        values = [t.params[p_name] if p_name in t.params else np.nan for t in trials]
+    numeric_cat_params_indices: List[int] = []
 
-        if _is_log_scale(trials, p_name):
-            values = [math.log10(v) for v in values]
-            log_param_names.append(p_name)
-        elif _is_categorical(trials, p_name):
+    for param_index, p_name in enumerate(sorted_params):
+        values = [t.params[p_name] for t in trials if t.number not in skipped_trial_numbers]
+
+        if _is_categorical(trials, p_name):
             vocab = defaultdict(lambda: len(vocab))  # type: DefaultDict[str, int]
+
+            if _is_numerical(trials, p_name):
+                _ = [vocab[v] for v in sorted(values)]
+                numeric_cat_params_indices.append(param_index)
+
             values = [vocab[v] for v in values]
+
             cat_param_names.append(p_name)
             vocab_item_sorted = sorted(vocab.items(), key=lambda x: x[1])
             cat_param_values.append([v[0] for v in vocab_item_sorted])
             cat_param_ticks.append([v[1] for v in vocab_item_sorted])
 
-        p_min = min(values)
-        p_max = max(values)
+        if _is_log_scale(trials, p_name):
+            values_for_lc = [np.log10(v) for v in values]
+        else:
+            values_for_lc = values
+
+        p_min = min(values_for_lc)
+        p_max = max(values_for_lc)
         p_w = p_max - p_min
 
         if p_w == 0.0:
@@ -163,11 +179,21 @@ def _get_parallel_coordinate_plot(
             for i in range(len(values)):
                 dims_obj_base[i].append(center)
         else:
-            for i, v in enumerate(values):
+            for i, v in enumerate(values_for_lc):
                 dims_obj_base[i].append((v - p_min) / p_w * obj_w + obj_min)
 
         var_names.append(p_name if len(p_name) < 20 else "{}...".format(p_name[:17]))
         param_values.append(values)
+
+    if numeric_cat_params_indices:
+        # np.lexsort consumes the sort keys the order from back to front.
+        # So the values of parameters have to be reversed the order.
+        sorted_idx = np.lexsort(
+            [param_values[index] for index in numeric_cat_params_indices][::-1]
+        )
+        # Since the values are mapped to other categories by the index,
+        # the index will be swapped according to the sorted index of numeric params.
+        param_values = [list(np.array(v)[sorted_idx]) for v in param_values]
 
     # Draw multiple line plots and axes.
     # Ref: https://stackoverflow.com/a/50029441
@@ -176,7 +202,7 @@ def _get_parallel_coordinate_plot(
     xs = [range(len(sorted_params) + 1) for _ in range(len(dims_obj_base))]
     segments = [np.column_stack([x, y]) for x, y in zip(xs, dims_obj_base)]
     lc = LineCollection(segments, cmap=cmap)
-    lc.set_array(np.asarray([target(t) for t in trials] + [0]))
+    lc.set_array(np.asarray(obj_org))
     axcb = fig.colorbar(lc, pad=0.1)
     axcb.set_label(target_name)
     plt.xticks(range(len(sorted_params) + 1), var_names, rotation=330)
@@ -188,8 +214,7 @@ def _get_parallel_coordinate_plot(
             ax2.set_yscale("log")
         ax2.spines["top"].set_visible(False)
         ax2.spines["bottom"].set_visible(False)
-        ax2.get_xaxis().set_visible(False)
-        ax2.plot([1] * len(param_values[i]), param_values[i], visible=False)
+        ax2.xaxis.set_visible(False)
         ax2.spines["right"].set_position(("axes", (i + 1) / len(sorted_params)))
         if p_name in cat_param_names:
             idx = cat_param_names.index(p_name)

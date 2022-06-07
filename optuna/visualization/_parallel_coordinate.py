@@ -8,19 +8,25 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
-from optuna._study_direction import StudyDirection
+import numpy as np
+
 from optuna.logging import get_logger
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 from optuna.visualization._plotly_imports import _imports
 from optuna.visualization._utils import _check_plot_args
+from optuna.visualization._utils import _filter_nonfinite
+from optuna.visualization._utils import _get_skipped_trial_numbers
 from optuna.visualization._utils import _is_categorical
 from optuna.visualization._utils import _is_log_scale
+from optuna.visualization._utils import _is_numerical
+from optuna.visualization._utils import _is_reverse_scale
 
 
 if _imports.is_successful():
     from optuna.visualization._plotly_imports import go
+    from optuna.visualization._utils import COLOR_SCALE
 
 _logger = get_logger(__name__)
 
@@ -74,11 +80,6 @@ def plot_parallel_coordinate(
 
     Returns:
         A :class:`plotly.graph_objs.Figure` object.
-
-    Raises:
-        :exc:`ValueError`:
-            If ``target`` is :obj:`None` and ``study`` is being used for multi-objective
-            optimization.
     """
 
     _imports.check()
@@ -94,8 +95,11 @@ def _get_parallel_coordinate_plot(
 ) -> "go.Figure":
 
     layout = go.Layout(title="Parallel Coordinate Plot")
+    reverse_scale = _is_reverse_scale(study, target)
 
-    trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE]
+    trials = _filter_nonfinite(
+        study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target
+    )
 
     if len(trials) == 0:
         _logger.warning("Your study does not have any completed trials.")
@@ -115,20 +119,30 @@ def _get_parallel_coordinate_plot(
             return cast(float, t.value)
 
         target = _target
-        reversescale = study.direction == StudyDirection.MINIMIZE
-    else:
-        reversescale = True
+
+    skipped_trial_ids = _get_skipped_trial_numbers(trials, sorted_params)
+
+    objectives = tuple([target(t) for t in trials if t.number not in skipped_trial_ids])
+
+    if len(objectives) == 0:
+        _logger.warning("Your study has only completed trials with missing parameters.")
+        return go.Figure(data=[], layout=layout)
 
     dims: List[Dict[str, Any]] = [
         {
             "label": target_name,
-            "values": tuple([target(t) for t in trials]),
-            "range": (min([target(t) for t in trials]), max([target(t) for t in trials])),
+            "values": objectives,
+            "range": (min(objectives), max(objectives)),
         }
     ]
-    for p_name in sorted_params:
+
+    numeric_cat_params_indices: List[int] = []
+    for dim_index, p_name in enumerate(sorted_params, start=1):
         values = []
         for t in trials:
+            if t.number in skipped_trial_ids:
+                continue
+
             if p_name in t.params:
                 values.append(t.params[p_name])
 
@@ -150,13 +164,22 @@ def _get_parallel_coordinate_plot(
             }
         elif _is_categorical(trials, p_name):
             vocab: DefaultDict[str, int] = defaultdict(lambda: len(vocab))
-            values = [vocab[v] for v in values]
+
+            if _is_numerical(trials, p_name):
+                _ = [vocab[v] for v in sorted(values)]
+                values = [vocab[v] for v in values]
+                ticktext = list(sorted(vocab.keys()))
+                numeric_cat_params_indices.append(dim_index)
+            else:
+                values = [vocab[v] for v in values]
+                ticktext = list(sorted(vocab.keys(), key=lambda x: vocab[x]))
+
             dim = {
                 "label": p_name if len(p_name) < 20 else "{}...".format(p_name[:17]),
                 "values": tuple(values),
                 "range": (min(values), max(values)),
                 "tickvals": list(range(len(vocab))),
-                "ticktext": list(sorted(vocab.keys(), key=lambda x: vocab[x])),
+                "ticktext": ticktext,
             }
         else:
             dim = {
@@ -167,6 +190,15 @@ def _get_parallel_coordinate_plot(
 
         dims.append(dim)
 
+    if numeric_cat_params_indices:
+        # np.lexsort consumes the sort keys the order from back to front.
+        # So the values of parameters have to be reversed the order.
+        idx = np.lexsort([dims[index]["values"] for index in numeric_cat_params_indices][::-1])
+        for dim in dims:
+            # Since the values are mapped to other categories by the index,
+            # the index will be swapped according to the sorted index of numeric params.
+            dim.update({"values": tuple(np.array(dim["values"])[idx])})
+
     traces = [
         go.Parcoords(
             dimensions=dims,
@@ -174,10 +206,10 @@ def _get_parallel_coordinate_plot(
             labelside="bottom",
             line={
                 "color": dims[0]["values"],
-                "colorscale": "blues",
+                "colorscale": COLOR_SCALE,
                 "colorbar": {"title": target_name},
                 "showscale": True,
-                "reversescale": reversescale,
+                "reversescale": reverse_scale,
             },
         )
     ]

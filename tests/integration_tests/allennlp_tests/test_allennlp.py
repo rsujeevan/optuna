@@ -15,11 +15,14 @@ import allennlp.modules
 import allennlp.modules.seq2vec_encoders
 import allennlp.modules.text_field_embedders
 import allennlp.training
+import psutil
 import pytest
 import torch.optim
 
 import optuna
 from optuna.integration.allennlp import AllenNLPPruningCallback
+from optuna.integration.allennlp._pruner import _create_pruner
+from optuna.integration.allennlp._variables import _VariableManager
 from optuna.testing.integration import DeterministicPruner
 
 
@@ -78,7 +81,7 @@ def test_build_params_when_optuna_and_environment_variable_both_exist() -> None:
     os.environ.pop("LEARNING_RATE")
     os.environ.pop("DROPOUT")
 
-    # Optuna trial overwrites a parameter specified by environment variable
+    # Optuna trial overwrites a parameter specified by environment variable.
     assert params["trainer"]["optimizer"]["lr"] == 1e-2
     path = params["model"]["text_field_embedder"]["token_embedders"]["token_characters"]["dropout"]
     assert path == 0.0
@@ -194,11 +197,12 @@ def test_allennlp_executor_with_options() -> None:
         with open(os.path.join(executor._serialization_dir, "metrics.json"), "w") as fout:
             json.dump({executor._metrics: 1.0}, fout)
 
+        expected_include_packages = [package_name, "optuna.integration.allennlp"]
         with mock.patch("allennlp.commands.train.train_model", return_value=None) as mock_obj:
             executor.run()
             assert mock_obj.call_args[1]["force"]
             assert mock_obj.call_args[1]["file_friendly_logging"]
-            assert mock_obj.call_args[1]["include_package"] == [package_name]
+            assert mock_obj.call_args[1]["include_package"] == expected_include_packages
 
 
 def test_dump_best_config() -> None:
@@ -358,13 +362,18 @@ def test_allennlp_pruning_callback_with_invalid_storage() -> None:
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "input_config_file",
+    [
+        "tests/integration_tests/allennlp_tests/example_with_executor_and_pruner.jsonnet",
+        "tests/integration_tests/allennlp_tests/example_with_executor_and_pruner_distributed.jsonnet",  # noqa: E501
+    ],
+)
 def test_allennlp_pruning_callback_with_executor(
-    pruner_class: Type[optuna.pruners.BasePruner], pruner_kwargs: Dict[str, Union[int, float]]
+    pruner_class: Type[optuna.pruners.BasePruner],
+    pruner_kwargs: Dict[str, Union[int, float]],
+    input_config_file: str,
 ) -> None:
-    input_config_file = (
-        "tests/integration_tests/allennlp_tests/example_with_executor_and_pruner.jsonnet"
-    )
-
     def run_allennlp_executor(pruner: optuna.pruners.BasePruner) -> None:
         study = optuna.create_study(direction="maximize", pruner=pruner, storage=storage)
         trial = optuna.trial.Trial(study, study._storage.create_new_trial(study._study_id))
@@ -380,7 +389,12 @@ def test_allennlp_pruning_callback_with_executor(
 
         pruner = pruner_class(**pruner_kwargs)  # type: ignore
         run_allennlp_executor(pruner)
-        ret_pruner = optuna.integration.allennlp._create_pruner()
+        process = psutil.Process()
+        manager = _VariableManager(process.ppid())
+        ret_pruner = _create_pruner(
+            manager.get_value("pruner_class"),
+            manager.get_value("pruner_kwargs"),
+        )
 
         assert isinstance(ret_pruner, pruner_class)
         for key, value in pruner_kwargs.items():
@@ -410,12 +424,3 @@ def test_allennlp_pruning_callback_with_invalid_executor() -> None:
 
         with pytest.raises(ValueError):
             optuna.integration.AllenNLPExecutor(trial, input_config_file, serialization_dir)
-
-
-def test_infer_and_cast() -> None:
-    assert optuna.integration.allennlp._infer_and_cast(None) is None
-    assert optuna.integration.allennlp._infer_and_cast("True") is True
-    assert optuna.integration.allennlp._infer_and_cast("False") is False
-    assert optuna.integration.allennlp._infer_and_cast("3.14") == 3.14
-    assert optuna.integration.allennlp._infer_and_cast("42") == 42
-    assert optuna.integration.allennlp._infer_and_cast("auto") == "auto"

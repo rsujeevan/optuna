@@ -9,7 +9,7 @@ from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
-from unittest.mock import Mock  # NOQA
+from unittest.mock import Mock
 from unittest.mock import patch
 import uuid
 
@@ -28,7 +28,6 @@ from optuna import Study
 from optuna import Trial
 from optuna import TrialPruned
 from optuna.exceptions import DuplicatedStudyError
-from optuna.storages import get_storage
 from optuna.study import StudyDirection
 from optuna.testing.storage import STORAGE_MODES
 from optuna.testing.storage import StorageSupplier
@@ -80,7 +79,7 @@ def check_params(params: Dict[str, Any]) -> None:
 def check_value(value: Optional[float]) -> None:
 
     assert isinstance(value, float)
-    assert -1.0 <= value <= 12.0 ** 2 + 5.0 ** 2 + 1.0
+    assert -1.0 <= value <= 12.0**2 + 5.0**2 + 1.0
 
 
 def check_frozen_trial(frozen_trial: FrozenTrial) -> None:
@@ -111,13 +110,6 @@ def check_study(study: Study) -> None:
         check_frozen_trial(study.best_trial)
 
 
-def test_optimize_n_jobs_warning() -> None:
-
-    study = create_study()
-    with pytest.warns(FutureWarning):
-        study.optimize(func, n_trials=1, n_jobs=2)
-
-
 def test_optimize_trivial_in_memory_new() -> None:
 
     study = create_study()
@@ -135,7 +127,7 @@ def test_optimize_trivial_in_memory_resume() -> None:
 
 def test_optimize_trivial_rdb_resume_study() -> None:
 
-    study = create_study("sqlite:///:memory:")
+    study = create_study(storage="sqlite:///:memory:")
     study.optimize(func, n_trials=10)
     check_study(study)
 
@@ -307,17 +299,22 @@ def test_trial_set_and_get_system_attrs(storage_mode: str) -> None:
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
-def test_get_all_study_summaries(storage_mode: str) -> None:
+@pytest.mark.parametrize("include_best_trial", [True, False])
+def test_get_all_study_summaries(storage_mode: str, include_best_trial: bool) -> None:
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage)
-        study.optimize(Func(), n_trials=5)
+        study.optimize(func, n_trials=5)
 
-        summaries = get_all_study_summaries(study._storage)
+        summaries = get_all_study_summaries(study._storage, include_best_trial)
         summary = [s for s in summaries if s._study_id == study._study_id][0]
 
         assert summary.study_name == study.study_name
         assert summary.n_trials == 5
+        if include_best_trial:
+            assert summary.best_trial is not None
+        else:
+            assert summary.best_trial is None
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
@@ -416,21 +413,17 @@ def test_load_study_study_name_none(storage_mode: str) -> None:
 def test_delete_study(storage_mode: str) -> None:
 
     with StorageSupplier(storage_mode) as storage:
-        # Get storage object because delete_study does not accept None.
-        storage = get_storage(storage=storage)
-        assert storage is not None
-
         # Test deleting a non-existing study.
         with pytest.raises(KeyError):
-            delete_study("invalid-study-name", storage)
+            delete_study(study_name="invalid-study-name", storage=storage)
 
         # Test deleting an existing study.
         study = create_study(storage=storage, load_if_exists=False)
-        delete_study(study.study_name, storage)
+        delete_study(study_name=study.study_name, storage=storage)
 
         # Test failed to delete the study which is already deleted.
         with pytest.raises(KeyError):
-            delete_study(study.study_name, storage)
+            delete_study(study_name=study.study_name, storage=storage)
 
 
 @pytest.mark.parametrize("from_storage_mode", STORAGE_MODES)
@@ -600,7 +593,7 @@ def test_enqueue_trial_properly_sets_param_values(storage_mode: str) -> None:
 
             x = trial.suggest_int("x", -10, 10)
             y = trial.suggest_int("y", -10, 10)
-            return x ** 2 + y ** 2
+            return x**2 + y**2
 
         study.optimize(objective, n_trials=2)
         t0 = study.trials[0]
@@ -625,7 +618,7 @@ def test_enqueue_trial_with_unfixed_parameters(storage_mode: str) -> None:
 
             x = trial.suggest_int("x", -10, 10)
             y = trial.suggest_int("y", -10, 10)
-            return x ** 2 + y ** 2
+            return x**2 + y**2
 
         study.optimize(objective, n_trials=1)
         t = study.trials[0]
@@ -634,13 +627,38 @@ def test_enqueue_trial_with_unfixed_parameters(storage_mode: str) -> None:
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
-def test_enqueue_trial_with_out_of_range_parameters(storage_mode: str) -> None:
+def test_enqueue_trial_properly_sets_user_attr(storage_mode: str) -> None:
 
     with StorageSupplier(storage_mode) as storage:
         study = create_study(storage=storage)
         assert len(study.trials) == 0
 
-        study.enqueue_trial(params={"x": 11})
+        study.enqueue_trial(params={"x": -5, "y": 5}, user_attrs={"is_optimal": False})
+        study.enqueue_trial(params={"x": 0, "y": 0}, user_attrs={"is_optimal": True})
+
+        def objective(trial: Trial) -> float:
+
+            x = trial.suggest_int("x", -10, 10)
+            y = trial.suggest_int("y", -10, 10)
+            return x**2 + y**2
+
+        study.optimize(objective, n_trials=2)
+        t0 = study.trials[0]
+        assert t0.user_attrs == {"is_optimal": False}
+
+        t1 = study.trials[1]
+        assert t1.user_attrs == {"is_optimal": True}
+
+
+@pytest.mark.parametrize("storage_mode", STORAGE_MODES)
+def test_enqueue_trial_with_out_of_range_parameters(storage_mode: str) -> None:
+    fixed_value = 11
+
+    with StorageSupplier(storage_mode) as storage:
+        study = create_study(storage=storage)
+        assert len(study.trials) == 0
+
+        study.enqueue_trial(params={"x": fixed_value})
 
         def objective(trial: Trial) -> float:
 
@@ -649,7 +667,7 @@ def test_enqueue_trial_with_out_of_range_parameters(storage_mode: str) -> None:
         with pytest.warns(UserWarning):
             study.optimize(objective, n_trials=1)
         t = study.trials[0]
-        assert -10 <= t.params["x"] <= 10
+        assert t.params["x"] == fixed_value
 
     # Internal logic might differ when distribution contains a single element.
     # Test it explicitly.
@@ -657,7 +675,7 @@ def test_enqueue_trial_with_out_of_range_parameters(storage_mode: str) -> None:
         study = create_study(storage=storage)
         assert len(study.trials) == 0
 
-        study.enqueue_trial(params={"x": 11})
+        study.enqueue_trial(params={"x": fixed_value})
 
         def objective(trial: Trial) -> float:
 
@@ -666,10 +684,10 @@ def test_enqueue_trial_with_out_of_range_parameters(storage_mode: str) -> None:
         with pytest.warns(UserWarning):
             study.optimize(objective, n_trials=1)
         t = study.trials[0]
-        assert t.params["x"] == 1
+        assert t.params["x"] == fixed_value
 
 
-@patch("optuna._optimize.gc.collect")
+@patch("optuna.study._optimize.gc.collect")
 def test_optimize_with_gc(collect_mock: Mock) -> None:
 
     study = create_study()
@@ -678,13 +696,159 @@ def test_optimize_with_gc(collect_mock: Mock) -> None:
     assert collect_mock.call_count == 10
 
 
-@patch("optuna._optimize.gc.collect")
+@patch("optuna.study._optimize.gc.collect")
 def test_optimize_without_gc(collect_mock: Mock) -> None:
 
     study = create_study()
     study.optimize(func, n_trials=10, gc_after_trial=False)
     check_study(study)
     assert collect_mock.call_count == 0
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_optimize_with_progbar(n_jobs: int, capsys: _pytest.capture.CaptureFixture) -> None:
+
+    study = create_study()
+    study.optimize(lambda _: 1.0, n_trials=10, n_jobs=n_jobs, show_progress_bar=True)
+    _, err = capsys.readouterr()
+
+    # Search for progress bar elements in stderr.
+    assert "10/10" in err
+    assert "100%" in err
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_optimize_without_progbar(n_jobs: int, capsys: _pytest.capture.CaptureFixture) -> None:
+
+    study = create_study()
+    study.optimize(lambda _: 1.0, n_trials=10, n_jobs=n_jobs)
+    _, err = capsys.readouterr()
+
+    assert "10/10" not in err
+    assert "100%" not in err
+
+
+def test_optimize_with_progbar_timeout(capsys: _pytest.capture.CaptureFixture) -> None:
+
+    study = create_study()
+    study.optimize(lambda _: 1.0, timeout=2.0, show_progress_bar=True)
+    _, err = capsys.readouterr()
+
+    assert "00:02/00:02" in err
+    assert "100%" in err
+
+
+def test_optimize_with_progbar_parallel_timeout(capsys: _pytest.capture.CaptureFixture) -> None:
+
+    study = create_study()
+    with pytest.warns(
+        UserWarning, match="The timeout-based progress bar is not supported with n_jobs != 1."
+    ):
+        study.optimize(lambda _: 1.0, timeout=2.0, show_progress_bar=True, n_jobs=2)
+    _, err = capsys.readouterr()
+
+    # Testing for a character that forms progress bar borders.
+    assert "|" not in err
+
+
+@pytest.mark.parametrize(
+    "timeout,expected",
+    [
+        (59.0, "/00:59"),
+        (60.0, "/01:00"),
+        (60.0 * 60, "/1:00:00"),
+        (60.0 * 60 * 24, "/24:00:00"),
+        (60.0 * 60 * 24 * 10, "/240:00:00"),
+    ],
+)
+def test_optimize_with_progbar_timeout_formats(
+    timeout: float, expected: str, capsys: _pytest.capture.CaptureFixture
+) -> None:
+    def _objective(trial: Trial) -> float:
+        if trial.number == 5:
+            trial.study.stop()
+        return 1.0
+
+    study = create_study()
+    study.optimize(_objective, timeout=timeout, show_progress_bar=True)
+    _, err = capsys.readouterr()
+    assert expected in err
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_optimize_without_progbar_timeout(
+    n_jobs: int, capsys: _pytest.capture.CaptureFixture
+) -> None:
+
+    study = create_study()
+    study.optimize(lambda _: 1.0, timeout=2.0, n_jobs=n_jobs)
+    _, err = capsys.readouterr()
+
+    assert "00:02/00:02" not in err
+    assert "100%" not in err
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_optimize_progbar_n_trials_prioritized(
+    n_jobs: int, capsys: _pytest.capture.CaptureFixture
+) -> None:
+
+    study = create_study()
+    study.optimize(lambda _: 1.0, n_trials=10, n_jobs=n_jobs, timeout=10.0, show_progress_bar=True)
+    _, err = capsys.readouterr()
+
+    assert "10/10" in err
+    assert "100%" in err
+    assert "it" in err
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_optimize_without_progbar_n_trials_prioritized(
+    n_jobs: int, capsys: _pytest.capture.CaptureFixture
+) -> None:
+
+    study = create_study()
+    study.optimize(lambda _: 1.0, n_trials=10, n_jobs=n_jobs, timeout=10.0)
+    _, err = capsys.readouterr()
+
+    # Testing for a character that forms progress bar borders.
+    assert "|" not in err
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_optimize_progbar_no_constraints(
+    n_jobs: int, capsys: _pytest.capture.CaptureFixture
+) -> None:
+    def _objective(trial: Trial) -> float:
+        if trial.number == 5:
+            trial.study.stop()
+        return 1.0
+
+    study = create_study()
+    study.optimize(_objective, n_jobs=n_jobs, show_progress_bar=True)
+    _, err = capsys.readouterr()
+
+    # We can't simply test if stderr is empty, since we're not sure
+    # what else could write to it. Instead, we are testing for a character
+    # that forms progress bar borders.
+    assert "|" not in err
+
+
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_optimize_without_progbar_no_constraints(
+    n_jobs: int, capsys: _pytest.capture.CaptureFixture
+) -> None:
+    def _objective(trial: Trial) -> float:
+        if trial.number == 5:
+            trial.study.stop()
+        return 1.0
+
+    study = create_study()
+    study.optimize(_objective, n_jobs=n_jobs)
+    _, err = capsys.readouterr()
+
+    # Testing for a character that forms progress bar borders.
+    assert "|" not in err
 
 
 @pytest.mark.parametrize("n_jobs", [1, 4])
@@ -752,8 +916,6 @@ def test_callbacks(n_jobs: int) -> None:
 def test_get_trials(storage_mode: str) -> None:
 
     with StorageSupplier(storage_mode) as storage:
-        storage = get_storage(storage=storage)
-
         study = create_study(storage=storage)
         study.optimize(lambda t: t.suggest_int("x", 1, 5), n_trials=5)
 
@@ -777,8 +939,6 @@ def test_get_trials(storage_mode: str) -> None:
 def test_get_trials_state_option(storage_mode: str) -> None:
 
     with StorageSupplier(storage_mode) as storage:
-        storage = get_storage(storage=storage)
-
         study = create_study(storage=storage)
 
         def objective(trial: Trial) -> float:
@@ -843,24 +1003,23 @@ def test_log_completed_trial_skip_storage_access() -> None:
 
     # Create a trial to retrieve it as the `study.best_trial`.
     study.optimize(lambda _: 0.0, n_trials=1)
-    trial = Trial(study, study._storage.create_new_trial(study._study_id))
+    frozen_trial = study.best_trial
 
     storage = study._storage
 
     with patch.object(storage, "get_best_trial", wraps=storage.get_best_trial) as mock_object:
-        study._log_completed_trial(trial, [1.0])
-        # Trial.best_trial and Trial.best_params access storage.
-        assert mock_object.call_count == 2
+        study._log_completed_trial(frozen_trial)
+        assert mock_object.call_count == 1
 
     logging.set_verbosity(logging.WARNING)
     with patch.object(storage, "get_best_trial", wraps=storage.get_best_trial) as mock_object:
-        study._log_completed_trial(trial, [1.0])
+        study._log_completed_trial(frozen_trial)
         assert mock_object.call_count == 0
 
     logging.set_verbosity(logging.DEBUG)
     with patch.object(storage, "get_best_trial", wraps=storage.get_best_trial) as mock_object:
-        study._log_completed_trial(trial, [1.0])
-        assert mock_object.call_count == 2
+        study._log_completed_trial(frozen_trial)
+        assert mock_object.call_count == 1
 
 
 def test_create_study_with_multi_objectives() -> None:
@@ -897,7 +1056,7 @@ def test_optimize_with_multi_objectives(n_objectives: int) -> None:
     study = create_study(directions=directions)
 
     def objective(trial: Trial) -> List[float]:
-        return [trial.suggest_uniform("v{}".format(i), 0, 5) for i in range(n_objectives)]
+        return [trial.suggest_float("v{}".format(i), 0, 5) for i in range(n_objectives)]
 
     study.optimize(objective, n_trials=10)
 
@@ -922,7 +1081,7 @@ def test_wrong_n_objectives() -> None:
     study = create_study(directions=directions)
 
     def objective(trial: Trial) -> List[float]:
-        return [trial.suggest_uniform("v{}".format(i), 0, 5) for i in range(n_objectives + 1)]
+        return [trial.suggest_float("v{}".format(i), 0, 5) for i in range(n_objectives + 1)]
 
     study.optimize(objective, n_trials=10)
 
@@ -940,15 +1099,16 @@ def test_ask() -> None:
 def test_ask_enqueue_trial() -> None:
     study = create_study()
 
-    study.enqueue_trial({"x": 0.5})
+    study.enqueue_trial({"x": 0.5}, user_attrs={"memo": "this is memo"})
 
     trial = study.ask()
     assert trial.suggest_float("x", 0, 1) == 0.5
+    assert trial.user_attrs == {"memo": "this is memo"}
 
 
 def test_ask_fixed_search_space() -> None:
     fixed_distributions = {
-        "x": distributions.UniformDistribution(0, 1),
+        "x": distributions.FloatDistribution(0, 1),
         "y": distributions.CategoricalDistribution(["bacon", "spam"]),
     }
 
@@ -959,6 +1119,59 @@ def test_ask_fixed_search_space() -> None:
     assert len(trial.params) == 2
     assert 0 <= params["x"] < 1
     assert params["y"] in ["bacon", "spam"]
+
+
+# Deprecated distributions are internally converted to corresponding distributions.
+def test_ask_distribution_conversion() -> None:
+    fixed_distributions = {
+        "ud": distributions.UniformDistribution(low=0, high=10),
+        "dud": distributions.DiscreteUniformDistribution(low=0, high=10, q=2),
+        "lud": distributions.LogUniformDistribution(low=1, high=10),
+        "id": distributions.IntUniformDistribution(low=0, high=10),
+        "idd": distributions.IntUniformDistribution(low=0, high=10, step=2),
+        "ild": distributions.IntLogUniformDistribution(low=1, high=10),
+    }
+
+    study = create_study()
+
+    with pytest.warns(
+        FutureWarning,
+        match="See https://github.com/optuna/optuna/issues/2941",
+    ) as record:
+
+        trial = study.ask(fixed_distributions=fixed_distributions)
+        assert len(record) == 6
+
+    expected_distributions = {
+        "ud": distributions.FloatDistribution(low=0, high=10, log=False, step=None),
+        "dud": distributions.FloatDistribution(low=0, high=10, log=False, step=2),
+        "lud": distributions.FloatDistribution(low=1, high=10, log=True, step=None),
+        "id": distributions.IntDistribution(low=0, high=10, log=False, step=1),
+        "idd": distributions.IntDistribution(low=0, high=10, log=False, step=2),
+        "ild": distributions.IntDistribution(low=1, high=10, log=True, step=1),
+    }
+
+    assert trial.distributions == expected_distributions
+
+
+# It confirms that ask doesn't convert non-deprecated distributions.
+def test_ask_distribution_conversion_noop() -> None:
+    fixed_distributions = {
+        "ud": distributions.FloatDistribution(low=0, high=10, log=False, step=None),
+        "dud": distributions.FloatDistribution(low=0, high=10, log=False, step=2),
+        "lud": distributions.FloatDistribution(low=1, high=10, log=True, step=None),
+        "id": distributions.IntDistribution(low=0, high=10, log=False, step=1),
+        "idd": distributions.IntDistribution(low=0, high=10, log=False, step=2),
+        "ild": distributions.IntDistribution(low=1, high=10, log=True, step=1),
+        "cd": distributions.CategoricalDistribution(choices=["a", "b", "c"]),
+    }
+
+    study = create_study()
+
+    trial = study.ask(fixed_distributions=fixed_distributions)
+
+    # Check fixed_distributions doesn't change.
+    assert trial.distributions == fixed_distributions
 
 
 def test_tell() -> None:
@@ -973,30 +1186,173 @@ def test_tell() -> None:
     assert len(study.trials) == 1
     assert len(study.get_trials(states=(TrialState.COMPLETE,))) == 1
 
-    study.tell(study.ask(), state=TrialState.PRUNED)
+    study.tell(study.ask(), [1.0])
     assert len(study.trials) == 2
+    assert len(study.get_trials(states=(TrialState.COMPLETE,))) == 2
+
+    # `trial` could be int.
+    study.tell(study.ask().number, 1.0)
+    assert len(study.trials) == 3
+    assert len(study.get_trials(states=(TrialState.COMPLETE,))) == 3
+
+    # Inf is supported as values.
+    study.tell(study.ask(), float("inf"))
+    assert len(study.trials) == 4
+    assert len(study.get_trials(states=(TrialState.COMPLETE,))) == 4
+
+    study.tell(study.ask(), state=TrialState.PRUNED)
+    assert len(study.trials) == 5
     assert len(study.get_trials(states=(TrialState.PRUNED,))) == 1
 
     study.tell(study.ask(), state=TrialState.FAIL)
-    assert len(study.trials) == 3
+    assert len(study.trials) == 6
     assert len(study.get_trials(states=(TrialState.FAIL,))) == 1
 
+
+def test_tell_pruned() -> None:
+    study = create_study()
+
+    study.tell(study.ask(), state=TrialState.PRUNED)
+    assert study.trials[-1].value is None
+    assert study.trials[-1].state == TrialState.PRUNED
+
+    # Store the last intermediates as value.
+    trial = study.ask()
+    trial.report(2.0, step=1)
+    study.tell(trial, state=TrialState.PRUNED)
+    assert study.trials[-1].value == 2.0
+    assert study.trials[-1].state == TrialState.PRUNED
+
+    # Inf is also supported as a value.
+    trial = study.ask()
+    trial.report(float("inf"), step=1)
+    study.tell(trial, state=TrialState.PRUNED)
+    assert study.trials[-1].value == float("inf")
+    assert study.trials[-1].state == TrialState.PRUNED
+
+    # NaN is not supported as a value.
+    trial = study.ask()
+    trial.report(float("nan"), step=1)
+    study.tell(trial, state=TrialState.PRUNED)
+    assert study.trials[-1].value is None
+    assert study.trials[-1].state == TrialState.PRUNED
+
+
+def test_tell_automatically_fail() -> None:
+    study = create_study()
+
+    # Check invalid values, e.g. str cannot be cast to float.
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), "a")  # type: ignore
+        assert len(study.trials) == 1
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    # Check invalid values, e.g. `None` that cannot be cast to float.
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), None)  # type: ignore
+        assert len(study.trials) == 2
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    # Check number of values.
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), [])
+        assert len(study.trials) == 3
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    # Check wrong number of values, e.g. two values for single direction.
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), [1.0, 2.0])
+        assert len(study.trials) == 4
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    # Both state and values are not specified.
+    with pytest.warns(UserWarning):
+        study.tell(study.ask())
+        assert len(study.trials) == 5
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    # Nan is not supported.
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), float("nan"))
+        assert len(study.trials) == 6
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+
+def test_tell_multi_objective() -> None:
+    study = create_study(directions=["minimize", "maximize"])
+    study.tell(study.ask(), [1.0, 2.0])
+    assert len(study.trials) == 1
+
+
+def test_tell_multi_objective_automatically_fail() -> None:
+    # Number of values doesn't match the length of directions.
+    study = create_study(directions=["minimize", "maximize"])
+
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), [])
+        assert len(study.trials) == 1
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), [1.0])
+        assert len(study.trials) == 2
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), [1.0, 2.0, 3.0])
+        assert len(study.trials) == 3
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), [1.0, None])  # type: ignore
+        assert len(study.trials) == 4
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+    with pytest.warns(UserWarning):
+        study.tell(study.ask(), [None, None])  # type: ignore
+        assert len(study.trials) == 5
+        assert study.trials[-1].state == TrialState.FAIL
+        assert study.trials[-1].values is None
+
+
+def test_tell_invalid() -> None:
+    study = create_study()
+
+    # Missing values for completions.
+    with pytest.raises(ValueError):
+        study.tell(study.ask(), state=TrialState.COMPLETE)
+
+    # `state` must be None or finished state
     with pytest.raises(ValueError):
         study.tell(study.ask(), state=TrialState.RUNNING)
 
+    # `state` must be None or finished state
     with pytest.raises(ValueError):
         study.tell(study.ask(), state=TrialState.WAITING)
 
+    # `value` must be None for `TrialState.PRUNED`
+    with pytest.raises(ValueError):
+        study.tell(study.ask(), values=1, state=TrialState.PRUNED)
 
-def test_tell_trial_variations() -> None:
-    study = create_study()
-
-    study.tell(study.ask().number, 1.0)
+    # `value` must be None for `TrialState.FAIL`
+    with pytest.raises(ValueError):
+        study.tell(study.ask(), values=1, state=TrialState.FAIL)
 
     # Trial that has not been asked for cannot be told.
     with pytest.raises(ValueError):
         study.tell(study.ask().number + 1, 1.0)
 
+    # It must be Trial or int for trial.
     with pytest.raises(TypeError):
         study.tell("1", 1.0)  # type: ignore
 
@@ -1007,47 +1363,11 @@ def test_tell_duplicate_tell() -> None:
     trial = study.ask()
     study.tell(trial, 1.0)
 
+    # Should not panic when passthrough is enabled.
+    study.tell(trial, 1.0, skip_if_finished=True)
+
     with pytest.raises(RuntimeError):
-        study.tell(trial, 1.0)
-
-
-def test_tell_values() -> None:
-    study = create_study()
-
-    study.tell(study.ask(), 1.0)
-
-    study.tell(study.ask(), [1.0])
-
-    # Check invalid values, e.g. ones that cannot be cast to float.
-    with pytest.raises(ValueError):
-        study.tell(study.ask(), "a")  # type: ignore
-
-    # Check number of values.
-    with pytest.raises(ValueError):
-        study.tell(study.ask(), [])
-
-    with pytest.raises(ValueError):
-        study.tell(study.ask(), [1.0, 2.0])
-
-    study = create_study(directions=["minimize", "maximize"])
-    study.tell(study.ask(), [1.0, 2.0])
-
-    with pytest.raises(ValueError):
-        study.tell(study.ask(), [])
-
-    with pytest.raises(ValueError):
-        study.tell(study.ask(), [1.0])
-
-    with pytest.raises(ValueError):
-        study.tell(study.ask(), [1.0, 2.0, 3.0])
-
-    # Missing values for completions.
-    with pytest.raises(ValueError):
-        study.tell(study.ask(), state=TrialState.COMPLETE)
-
-    # Default state is `TrialState.COMPLETE` for which values are required.
-    with pytest.raises(ValueError):
-        study.tell(study.ask())
+        study.tell(trial, 1.0, skip_if_finished=False)
 
 
 def test_tell_storage_not_implemented_trial_number() -> None:
@@ -1069,23 +1389,6 @@ def test_tell_storage_not_implemented_trial_number() -> None:
 
             with pytest.raises(ValueError):
                 study.tell(study.ask().number + 1, 1.0)
-
-
-def test_tell_pruned_values() -> None:
-    # See also `test_run_trial_with_trial_pruned`.
-    study = create_study()
-
-    trial = study.ask()
-
-    trial.report(2.0, step=1)
-
-    study.tell(trial, state=TrialState.PRUNED)
-    assert study.trials[-1].value == 2.0
-
-    trial = study.ask()
-
-    study.tell(trial, state=TrialState.PRUNED)
-    assert study.trials[-1].value is None
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
@@ -1120,11 +1423,11 @@ def test_study_summary_datetime_start_calculation(storage_mode: str) -> None:
         study.enqueue_trial(params={"x": 1})
 
         # Study summary with only enqueued trials should have null datetime_start
-        summaries = study._storage.get_all_study_summaries()
+        summaries = study._storage.get_all_study_summaries(include_best_trial=True)
         assert summaries[0].datetime_start is None
 
         # Study summary with completed trials should have nonnull datetime_start
         study.optimize(objective, n_trials=1)
         study.enqueue_trial(params={"x": 1})
-        summaries = study._storage.get_all_study_summaries()
+        summaries = study._storage.get_all_study_summaries(include_best_trial=True)
         assert summaries[0].datetime_start is not None

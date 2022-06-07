@@ -2,7 +2,7 @@
 
 # Optuna: A hyperparameter optimization framework
 
-[![Python](https://img.shields.io/badge/python-3.6%20%7C%203.7%20%7C%203.8%20%7C%203.9-blue)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.6%20%7C%203.7%20%7C%203.8%20%7C%203.9%20%7C%203.10-blue)](https://www.python.org)
 [![pypi](https://img.shields.io/pypi/v/optuna.svg)](https://pypi.python.org/pypi/optuna)
 [![conda](https://img.shields.io/conda/vn/conda-forge/optuna.svg)](https://anaconda.org/conda-forge/optuna)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/optuna/optuna)
@@ -20,6 +20,16 @@
 for machine learning. It features an imperative, *define-by-run* style user API. Thanks to our
 *define-by-run* API, the code written with Optuna enjoys high modularity, and the user of
 Optuna can dynamically construct the search spaces for the hyperparameters.
+
+## News
+
+- **2022-02-14** Pre-releases of Optuna 3.0 are available! Early adopters may want to upgrade and provide feedback for a smoother transition to the coming full release. You can install a pre-release version by `pip install -U --pre optuna`. Find the latest one [here](https://github.com/optuna/optuna/releases)
+
+- **2021-10-11**  Optuna 3.0 Roadmap published for review. Please take a look at the [planned improvements to Optuna](https://github.com/optuna/optuna/wiki/Optuna-V3-Roadmap), and share your feedback in the github issues. PR contributions also welcome!
+
+- **2021-07-14** Please take a few minutes to fill in this survey, and let us know how you use Optuna now and what improvements you'd like.🤔
+All questions optional. 🙇‍♂️
+https://forms.gle/mCAttqxVg5oUifKV8
 
 ## Key Features
 
@@ -45,7 +55,7 @@ We use the terms *study* and *trial* as follows:
 - Trial: a single execution of the objective function
 
 Please refer to sample code below. The goal of a *study* is to find out the optimal set of
-hyperparameter values (e.g., `classifier` and `svm_c`) through multiple *trials* (e.g.,
+hyperparameter values (e.g., `regressor` and `svr_c`) through multiple *trials* (e.g.,
 `n_trials=100`). Optuna is a framework designed for the automation and the acceleration of the
 optimization *studies*.
 
@@ -58,7 +68,7 @@ import ...
 def objective(trial):
 
     # Invoke suggest methods of a Trial object to generate hyperparameters.
-    regressor_name = trial.suggest_categorical('classifier', ['SVR', 'RandomForest'])
+    regressor_name = trial.suggest_categorical('regressor', ['SVR', 'RandomForest'])
     if regressor_name == 'SVR':
         svr_c = trial.suggest_float('svr_c', 1e-10, 1e10, log=True)
         regressor_obj = sklearn.svm.SVR(C=svr_c)
@@ -66,7 +76,7 @@ def objective(trial):
         rf_max_depth = trial.suggest_int('rf_max_depth', 2, 32)
         regressor_obj = sklearn.ensemble.RandomForestRegressor(max_depth=rf_max_depth)
 
-    X, y = sklearn.datasets.load_boston(return_X_y=True)
+    X, y = sklearn.datasets.fetch_california_housing(return_X_y=True)
     X_train, X_val, y_train, y_val = sklearn.model_selection.train_test_split(X, y, random_state=0)
 
     regressor_obj.fit(X_train, y_train)
@@ -90,7 +100,7 @@ Examples can be found in [optuna/optuna-examples](https://github.com/optuna/optu
 
 * [AllenNLP](https://github.com/optuna/optuna-examples/tree/main/allennlp)
 * [Catalyst](https://github.com/optuna/optuna-examples/tree/main/pytorch/catalyst_simple.py)
-* [Catboost](https://github.com/optuna/optuna-examples/tree/main/catboost/catboost_simple.py)
+* [Catboost](https://github.com/optuna/optuna-examples/tree/main/catboost/catboost_pruning.py)
 * [Chainer](https://github.com/optuna/optuna-examples/tree/main/chainer/chainer_integration.py)
 * FastAI ([V1](https://github.com/optuna/optuna-examples/tree/main/fastai/fastaiv1_simple.py), [V2](https://github.com/optuna/optuna-examples/tree/main/fastai/fastaiv2_simple.py))
 * [Keras](https://github.com/optuna/optuna-examples/tree/main/keras/keras_integration.py)

@@ -6,8 +6,8 @@ from typing import Tuple
 import pytest
 
 import optuna
-from optuna._study_direction import StudyDirection
 from optuna.multi_objective.trial import FrozenMultiObjectiveTrial
+from optuna.study._study_direction import StudyDirection
 from optuna.trial import TrialState
 
 
@@ -118,7 +118,7 @@ def test_params_and_distributions() -> None:
 
         assert set(trial.params.keys()) == {"x"}
         assert set(trial.distributions.keys()) == {"x"}
-        assert isinstance(trial.distributions["x"], optuna.distributions.UniformDistribution)
+        assert isinstance(trial.distributions["x"], optuna.distributions.FloatDistribution)
 
         return [x, x, x]
 
@@ -127,7 +127,7 @@ def test_params_and_distributions() -> None:
     trial = study.trials[0]
     assert set(trial.params.keys()) == {"x"}
     assert set(trial.distributions.keys()) == {"x"}
-    assert isinstance(trial.distributions["x"], optuna.distributions.UniformDistribution)
+    assert isinstance(trial.distributions["x"], optuna.distributions.FloatDistribution)
 
 
 def test_datetime() -> None:

@@ -7,13 +7,14 @@ from typing import DefaultDict
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
 
 import numpy as np
 
 import optuna
 from optuna import multi_objective
-from optuna._deprecated import deprecated
+from optuna._deprecated import deprecated_class
 from optuna.distributions import BaseDistribution
 from optuna.multi_objective.samplers import BaseMultiObjectiveSampler
 
@@ -24,7 +25,7 @@ _PARENTS_KEY = "multi_objective:nsga2:parents"
 _POPULATION_CACHE_KEY_PREFIX = "multi_objective:nsga2:population"
 
 
-@deprecated("2.4.0", "4.0.0")
+@deprecated_class("2.4.0", "4.0.0")
 class NSGAIIMultiObjectiveSampler(BaseMultiObjectiveSampler):
     """Multi-objective sampler using the NSGA-II algorithm.
 
@@ -93,7 +94,7 @@ class NSGAIIMultiObjectiveSampler(BaseMultiObjectiveSampler):
 
     def reseed_rng(self) -> None:
         self._random_sampler.reseed_rng()
-        self._rng = np.random.RandomState()
+        self._rng.seed()
 
     def infer_relative_search_space(
         self,
@@ -259,11 +260,12 @@ class NSGAIIMultiObjectiveSampler(BaseMultiObjectiveSampler):
     def _select_parent(
         self,
         study: "multi_objective.study.MultiObjectiveStudy",
-        population: List["multi_objective.trial.FrozenMultiObjectiveTrial"],
+        population: Sequence["multi_objective.trial.FrozenMultiObjectiveTrial"],
     ) -> "multi_objective.trial.FrozenMultiObjectiveTrial":
         # TODO(ohta): Consider to allow users to specify the number of parent candidates.
-        candidate0 = self._rng.choice(population)
-        candidate1 = self._rng.choice(population)
+        population_size = len(population)
+        candidate0 = population[self._rng.choice(population_size)]
+        candidate1 = population[self._rng.choice(population_size)]
 
         # TODO(ohta): Consider crowding distance.
         if candidate0._dominates(candidate1, study.directions):

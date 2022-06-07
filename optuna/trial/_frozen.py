@@ -5,22 +5,22 @@ from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Union
+import warnings
 
 from optuna import distributions
 from optuna import logging
-from optuna._experimental import experimental
+from optuna._deprecated import deprecated_func
+from optuna.distributions import _convert_old_distribution_to_new_distribution
 from optuna.distributions import BaseDistribution
 from optuna.distributions import CategoricalDistribution
-from optuna.distributions import DiscreteUniformDistribution
-from optuna.distributions import IntLogUniformDistribution
-from optuna.distributions import IntUniformDistribution
-from optuna.distributions import LogUniformDistribution
-from optuna.distributions import UniformDistribution
+from optuna.distributions import FloatDistribution
+from optuna.distributions import IntDistribution
 from optuna.trial._base import BaseTrial
 from optuna.trial._state import TrialState
 
 
 _logger = logging.get_logger(__name__)
+_suggest_deprecated_msg = "Use :func:`~optuna.trial.FrozenTrial.suggest_float` instead."
 
 CategoricalChoiceType = Union[None, bool, int, float, str]
 
@@ -28,8 +28,9 @@ CategoricalChoiceType = Union[None, bool, int, float, str]
 class FrozenTrial(BaseTrial):
     """Status and results of a :class:`~optuna.trial.Trial`.
 
-    This object has the same methods as :class:`~optuna.trial.Trial`, and it suggests best
-    parameter values among performed trials. In contrast to :class:`~optuna.trial.Trial`,
+    This object has the same methods as :class:`~optuna.trial.Trial`, and it suggests the same
+    parameter values as in :attr:`params`; it does not sample any value from a distribution.
+    In contrast to :class:`~optuna.trial.Trial`,
     :class:`~optuna.trial.FrozenTrial` does not depend on :class:`~optuna.study.Study`, and it is
     useful for deploying optimization results.
 
@@ -43,8 +44,8 @@ class FrozenTrial(BaseTrial):
 
 
             def objective(trial):
-                x = trial.suggest_uniform("x", -1, 1)
-                return x ** 2
+                x = trial.suggest_float("x", -1, 1)
+                return x**2
 
 
             study = optuna.create_study()
@@ -53,10 +54,9 @@ class FrozenTrial(BaseTrial):
             assert objective(study.best_trial) == study.best_value
 
     .. note::
-        Attributes are set in :func:`optuna.Study.optimize`,
-        but several attributes can be updated after the optimization.
-        That means such attributes are overwritten by the re-evaluation
-        if your objective updates attributes of :class:`~optuna.trial.Trial`.
+        Instances are mutable, despite the name.
+        For instance, :func:`~optuna.trial.FrozenTrial.set_user_attr` will update user attributes
+        of objects in-place.
 
 
         Example:
@@ -72,12 +72,12 @@ class FrozenTrial(BaseTrial):
 
 
                 def objective(trial):
-                    x = trial.suggest_uniform("x", -1, 1)
+                    x = trial.suggest_float("x", -1, 1)
 
                     # this user attribute always differs
                     trial.set_user_attr("evaluation time", datetime.datetime.now())
 
-                    return x ** 2
+                    return x**2
 
 
                 study = optuna.create_study()
@@ -104,9 +104,11 @@ class FrozenTrial(BaseTrial):
             :class:`TrialState` of the :class:`~optuna.trial.Trial`.
         value:
             Objective value of the :class:`~optuna.trial.Trial`.
+            ``value`` and ``values`` must not be specified at the same time.
         values:
             Sequence of objective values of the :class:`~optuna.trial.Trial`.
             The length is greater than 1 if the problem is multi-objective optimization.
+            ``value`` and ``values`` must not be specified at the same time.
         datetime_start:
             Datetime where the :class:`~optuna.trial.Trial` started.
         datetime_complete:
@@ -119,9 +121,6 @@ class FrozenTrial(BaseTrial):
         intermediate_values:
             Intermediate objective values set with :func:`optuna.trial.Trial.report`.
 
-    Raises:
-        :exc:`ValueError`:
-            If both ``value`` and ``values`` are specified.
     """
 
     def __init__(
@@ -223,48 +222,25 @@ class FrozenTrial(BaseTrial):
         log: bool = False,
     ) -> float:
 
-        if step is not None:
-            if log:
-                raise ValueError("The parameter `step` is not supported when `log` is True.")
-            else:
-                return self._suggest(name, DiscreteUniformDistribution(low=low, high=high, q=step))
-        else:
-            if log:
-                return self._suggest(name, LogUniformDistribution(low=low, high=high))
-            else:
-                return self._suggest(name, UniformDistribution(low=low, high=high))
+        return self._suggest(name, FloatDistribution(low, high, log=log, step=step))
 
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
     def suggest_uniform(self, name: str, low: float, high: float) -> float:
 
-        return self._suggest(name, UniformDistribution(low=low, high=high))
+        return self.suggest_float(name, low, high)
 
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
     def suggest_loguniform(self, name: str, low: float, high: float) -> float:
 
-        return self._suggest(name, LogUniformDistribution(low=low, high=high))
+        return self.suggest_float(name, low, high, log=True)
 
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
     def suggest_discrete_uniform(self, name: str, low: float, high: float, q: float) -> float:
 
-        discrete = DiscreteUniformDistribution(low=low, high=high, q=q)
-        return self._suggest(name, discrete)
+        return self.suggest_float(name, low, high, step=q)
 
     def suggest_int(self, name: str, low: int, high: int, step: int = 1, log: bool = False) -> int:
-
-        if step != 1:
-            if log:
-                raise ValueError(
-                    "The parameter `step != 1` is not supported when `log` is True."
-                    "The specified `step` is {}.".format(step)
-                )
-            else:
-                distribution: Union[
-                    IntUniformDistribution, IntLogUniformDistribution
-                ] = IntUniformDistribution(low=low, high=high, step=step)
-        else:
-            if log:
-                distribution = IntLogUniformDistribution(low=low, high=high)
-            else:
-                distribution = IntUniformDistribution(low=low, high=high, step=step)
-        return int(self._suggest(name, distribution))
+        return int(self._suggest(name, IntDistribution(low, high, log=log, step=step)))
 
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
@@ -362,7 +338,7 @@ class FrozenTrial(BaseTrial):
         value = self._params[name]
         param_value_in_internal_repr = distribution.to_internal_repr(value)
         if not distribution._contains(param_value_in_internal_repr):
-            raise ValueError(
+            warnings.warn(
                 "The value {} of the parameter '{}' is out of "
                 "the range of the distribution {}.".format(value, name, distribution)
             )
@@ -478,7 +454,7 @@ class FrozenTrial(BaseTrial):
 
     @property
     def last_step(self) -> Optional[int]:
-        """Return the maximum step of `intermediate_values` in the trial.
+        """Return the maximum step of :attr:`intermediate_values` in the trial.
 
         Returns:
             The maximum step of intermediates.
@@ -503,7 +479,6 @@ class FrozenTrial(BaseTrial):
             return None
 
 
-@experimental("2.0.0")
 def create_trial(
     *,
     state: TrialState = TrialState.COMPLETE,
@@ -523,12 +498,12 @@ def create_trial(
 
             import optuna
             from optuna.distributions import CategoricalDistribution
-            from optuna.distributions import UniformDistribution
+            from optuna.distributions import FloatDistribution
 
             trial = optuna.trial.create_trial(
                 params={"x": 1.0, "y": 0},
                 distributions={
-                    "x": UniformDistribution(0, 10),
+                    "x": FloatDistribution(0, 10),
                     "y": CategoricalDistribution([-1, 0, 1]),
                 },
                 value=5.0,
@@ -549,8 +524,9 @@ def create_trial(
         functions are created inside :func:`~optuna.study.Study.optimize`.
 
     .. note::
-        When ``state`` is ``TrialState.COMPLETE``, the following parameters are
+        When ``state`` is :class:`TrialState.COMPLETE`, the following parameters are
         required:
+
         * ``params``
         * ``distributions``
         * ``value`` or ``values``
@@ -559,12 +535,13 @@ def create_trial(
         state:
             Trial state.
         value:
-            Trial objective value. Must be specified if ``state`` is ``None``
-            or :class:`TrialState.COMPLETE`.
+            Trial objective value. Must be specified if ``state`` is :class:`TrialState.COMPLETE`.
+            ``value`` and ``values`` must not be specified at the same time.
         values:
             Sequence of the trial objective values. The length is greater than 1 if the problem is
             multi-objective optimization.
-            Must be specified if ``state`` is ``None`` or :class:`TrialState.COMPLETE`.
+            Must be specified if ``state`` is :class:`TrialState.COMPLETE`.
+            ``value`` and ``values`` must not be specified at the same time.
         params:
             Dictionary with suggested parameters of the trial.
         distributions:
@@ -578,14 +555,14 @@ def create_trial(
 
     Returns:
         Created trial.
-
-    Raises:
-        :exc:`ValueError`:
-            If both ``value`` and ``values`` are specified.
     """
 
     params = params or {}
     distributions = distributions or {}
+    distributions = {
+        key: _convert_old_distribution_to_new_distribution(dist)
+        for key, dist in distributions.items()
+    }
     user_attrs = user_attrs or {}
     system_attrs = system_attrs or {}
     intermediate_values = intermediate_values or {}

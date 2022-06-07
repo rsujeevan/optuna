@@ -5,11 +5,11 @@ from typing import Optional
 
 import optuna
 from optuna.distributions import BaseDistribution
-from optuna.study import BaseStudy
+from optuna.study import Study
 
 
 class IntersectionSearchSpace(object):
-    """A class to calculate the intersection search space of a :class:`~optuna.study.BaseStudy`.
+    """A class to calculate the intersection search space of a :class:`~optuna.study.Study`.
 
     Intersection search space contains the intersection of parameter distributions that have been
     suggested in the completed trials of the study so far.
@@ -33,14 +33,13 @@ class IntersectionSearchSpace(object):
 
         self._include_pruned = include_pruned
 
-    def calculate(
-        self, study: BaseStudy, ordered_dict: bool = False
-    ) -> Dict[str, BaseDistribution]:
-        """Returns the intersection search space of the :class:`~optuna.study.BaseStudy`.
+    def calculate(self, study: Study, ordered_dict: bool = False) -> Dict[str, BaseDistribution]:
+        """Returns the intersection search space of the :class:`~optuna.study.Study`.
 
         Args:
             study:
-                A study with completed trials.
+                A study with completed trials. The same study must be passed for one instance
+                of this class through its lifetime.
             ordered_dict:
                 A boolean flag determining the return type.
                 If :obj:`False`, the returned object will be a :obj:`dict`.
@@ -50,9 +49,6 @@ class IntersectionSearchSpace(object):
         Returns:
             A dictionary containing the parameter names and parameter's distributions.
 
-        Raises:
-            ValueError:
-                If different studies are passed into this method.
         """
 
         if self._study_id is None:
@@ -103,9 +99,9 @@ class IntersectionSearchSpace(object):
 
 
 def intersection_search_space(
-    study: BaseStudy, ordered_dict: bool = False, include_pruned: bool = False
+    study: Study, ordered_dict: bool = False, include_pruned: bool = False
 ) -> Dict[str, BaseDistribution]:
-    """Return the intersection search space of the :class:`~optuna.study.BaseStudy`.
+    """Return the intersection search space of the :class:`~optuna.study.Study`.
 
     Intersection search space contains the intersection of parameter distributions that have been
     suggested in the completed trials of the study so far.

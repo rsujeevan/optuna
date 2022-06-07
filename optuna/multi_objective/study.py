@@ -1,6 +1,7 @@
 import types
 from typing import Any
 from typing import Callable
+from typing import Container
 from typing import Dict
 from typing import Iterable
 from typing import List
@@ -12,13 +13,14 @@ from typing import Union
 
 from optuna import logging
 from optuna import multi_objective
-from optuna._deprecated import deprecated
-from optuna._study_direction import StudyDirection
+from optuna._deprecated import deprecated_class
+from optuna._deprecated import deprecated_func
 from optuna.pruners import NopPruner
 from optuna.storages import BaseStorage
 from optuna.study import create_study as _create_study
 from optuna.study import load_study as _load_study
 from optuna.study import Study
+from optuna.study._study_direction import StudyDirection
 from optuna.trial import FrozenTrial
 from optuna.trial import Trial
 from optuna.trial import TrialState
@@ -41,7 +43,7 @@ _logger = logging.get_logger(__name__)
 #
 # TODO(ohta): Consider to add `objective_labels` argument.
 # See: https://github.com/optuna/optuna/pull/1054#issuecomment-616382152
-@deprecated("2.4.0", "4.0.0")
+@deprecated_func("2.4.0", "4.0.0")
 def create_study(
     directions: List[str],
     study_name: Optional[str] = None,
@@ -63,7 +65,7 @@ def create_study(
                 x = trial.suggest_float("x", 0, 5)
                 y = trial.suggest_float("y", 0, 3)
 
-                v0 = 4 * x ** 2 + 4 * y ** 2
+                v0 = 4 * x**2 + 4 * y**2
                 v1 = (x - 5) ** 2 + (y - 5) ** 2
                 return v0, v1
 
@@ -133,7 +135,7 @@ def create_study(
     return MultiObjectiveStudy(study)
 
 
-@deprecated("2.4.0", "4.0.0")
+@deprecated_func("2.4.0", "4.0.0")
 def load_study(
     study_name: str,
     storage: Union[str, BaseStorage],
@@ -160,7 +162,7 @@ def load_study(
                 x = trial.suggest_float("x", 0, 5)
                 y = trial.suggest_float("y", 0, 3)
 
-                v0 = 4 * x ** 2 + 4 * y ** 2
+                v0 = 4 * x**2 + 4 * y**2
                 v1 = (x - 5) ** 2 + (y - 5) ** 2
                 return v0, v1
 
@@ -205,7 +207,7 @@ def load_study(
     return MultiObjectiveStudy(study)
 
 
-@deprecated("2.4.0", "4.0.0")
+@deprecated_class("2.4.0", "4.0.0")
 class MultiObjectiveStudy(object):
     """A study corresponds to a multi-objective optimization task, i.e., a set of trials.
 
@@ -303,7 +305,7 @@ class MultiObjectiveStudy(object):
                     x = trial.suggest_float("x", 0, 5)
                     y = trial.suggest_float("y", 0, 3)
 
-                    v0 = 4 * x ** 2 + 4 * y ** 2
+                    v0 = 4 * x**2 + 4 * y**2
                     v1 = (x - 5) ** 2 + (y - 5) ** 2
                     return v0, v1
 
@@ -419,7 +421,7 @@ class MultiObjectiveStudy(object):
     def get_trials(
         self,
         deepcopy: bool = True,
-        states: Optional[Tuple[TrialState, ...]] = None,
+        states: Optional[Container[TrialState]] = None,
     ) -> List["multi_objective.trial.FrozenMultiObjectiveTrial"]:
         """Return all trials in the study.
 
@@ -480,11 +482,16 @@ class MultiObjectiveStudy(object):
         return self._study._study_id
 
 
-def _log_completed_trial(self: Study, trial: Trial, values: Sequence[float]) -> None:
+def _log_completed_trial(self: Study, trial: FrozenTrial) -> None:
     if not _logger.isEnabledFor(logging.INFO):
         return
 
-    actual_values = multi_objective.trial.MultiObjectiveTrial(trial)._get_values()
+    n_objectives = len(self.directions)
+    frozen_multi_objective_trial = multi_objective.trial.FrozenMultiObjectiveTrial(
+        n_objectives,
+        trial,
+    )
+    actual_values = frozen_multi_objective_trial.values
     _logger.info(
         "Trial {} finished with values: {} with parameters: {}.".format(
             trial.number, actual_values, trial.params

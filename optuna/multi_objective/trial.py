@@ -7,9 +7,9 @@ from typing import Sequence
 from typing import Union
 
 from optuna import multi_objective
-from optuna._deprecated import deprecated
-from optuna._study_direction import StudyDirection
+from optuna._deprecated import deprecated_class
 from optuna.distributions import BaseDistribution
+from optuna.study._study_direction import StudyDirection
 from optuna.trial import FrozenTrial
 from optuna.trial import Trial
 from optuna.trial import TrialState
@@ -18,7 +18,7 @@ from optuna.trial import TrialState
 CategoricalChoiceType = Union[None, bool, int, float, str]
 
 
-@deprecated("2.4.0", "4.0.0")
+@deprecated_class("2.4.0", "4.0.0")
 class MultiObjectiveTrial(object):
     """A trial is a process of evaluating an objective function.
 
@@ -235,12 +235,8 @@ class MultiObjectiveTrial(object):
     # This method would be helpful to use the existing pruning
     # integrations for multi-objective optimization.
 
-    def _get_values(self) -> List[Optional[float]]:
-        trial = self._trial.study._storage.get_trial(self._trial._trial_id)
-        return [trial.intermediate_values.get(i) for i in range(self._n_objectives)]
 
-
-@deprecated("2.4.0", "4.0.0")
+@deprecated_class("2.4.0", "4.0.0")
 class FrozenMultiObjectiveTrial(object):
     """Status and results of a :class:`~optuna.multi_objective.trial.MultiObjectiveTrial`.
 

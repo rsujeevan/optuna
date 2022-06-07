@@ -18,11 +18,11 @@ import numpy as np
 
 import optuna
 from optuna import logging
-from optuna._study_direction import StudyDirection
 from optuna._transform import _SearchSpaceTransform
 from optuna.distributions import BaseDistribution
 from optuna.exceptions import ExperimentalWarning
 from optuna.samplers import BaseSampler
+from optuna.study._study_direction import StudyDirection
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 
@@ -38,7 +38,7 @@ CmaClass = Union[CMA, SepCMA]
 
 
 class CmaEsSampler(BaseSampler):
-    """A sampler using `cmaes <https://github.com/CyberAgent/cmaes>`_ as the backend.
+    """A sampler using `cmaes <https://github.com/CyberAgentAILab/cmaes>`_ as the backend.
 
     Example:
 
@@ -52,7 +52,7 @@ class CmaEsSampler(BaseSampler):
             def objective(trial):
                 x = trial.suggest_float("x", -1, 1)
                 y = trial.suggest_int("y", -1, 1)
-                return x ** 2 + y
+                return x**2 + y
 
 
             sampler = optuna.samplers.CmaEsSampler()
@@ -60,9 +60,10 @@ class CmaEsSampler(BaseSampler):
             study.optimize(objective, n_trials=20)
 
     Please note that this sampler does not support CategoricalDistribution.
-    However, :class:`~optuna.distributions.DiscreteUniformDistribution`
-    (:func:`~optuna.trial.Trial.suggest_discrete_uniform`) and
-    Int(Log)Distribution (:func:`~optuna.trial.Trial.suggest_int`) are supported.
+    However, :class:`~optuna.distributions.FloatDistribution` with ``step``,
+    (:func:`~optuna.trial.Trial.suggest_float`) and
+    :class:`~optuna.distributions.IntDistribution` (:func:`~optuna.trial.Trial.suggest_int`)
+    are supported.
 
     If your search space contains categorical parameters, I recommend you
     to use :class:`~optuna.samplers.TPESampler` instead.
@@ -184,9 +185,6 @@ class CmaEsSampler(BaseSampler):
                 versions without prior notice. See
                 https://github.com/optuna/optuna/releases/tag/v2.6.0.
 
-    Raises:
-        ValueError:
-            If ``restart_strategy`` is not 'ipop' or :obj:`None`.
     """
 
     def __init__(
@@ -254,7 +252,7 @@ class CmaEsSampler(BaseSampler):
         # TODO(c-bata): Support WS-sep-CMA-ES.
         if source_trials is not None and use_separable_cma:
             raise ValueError(
-                "It is prohibited to pass `source_trials` argument when " "using separable CMA-ES."
+                "It is prohibited to pass `source_trials` argument when using separable CMA-ES."
             )
 
         # TODO(c-bata): Support BIPOP-CMA-ES.
@@ -286,11 +284,8 @@ class CmaEsSampler(BaseSampler):
             if not isinstance(
                 distribution,
                 (
-                    optuna.distributions.UniformDistribution,
-                    optuna.distributions.LogUniformDistribution,
-                    optuna.distributions.DiscreteUniformDistribution,
-                    optuna.distributions.IntUniformDistribution,
-                    optuna.distributions.IntLogUniformDistribution,
+                    optuna.distributions.FloatDistribution,
+                    optuna.distributions.IntDistribution,
                 ),
             ):
                 # Categorical distribution is unsupported.
@@ -333,7 +328,7 @@ class CmaEsSampler(BaseSampler):
             optimizer = self._init_optimizer(trans, study.direction)
 
         if self._restart_strategy is None:
-            generation_attr_key = "cma:generation"  # for backward compatibility
+            generation_attr_key = "cma:generation"  # For backward compatibility.
         else:
             generation_attr_key = "cma:restart_{}:generation".format(n_restarts)
 
@@ -372,15 +367,15 @@ class CmaEsSampler(BaseSampler):
                     trans, study.direction, population_size=popsize, randomize_start_point=True
                 )
 
-            # Store optimizer
+            # Store optimizer.
             optimizer_str = pickle.dumps(optimizer).hex()
             optimizer_attrs = _split_optimizer_str(optimizer_str)
             for key in optimizer_attrs:
                 study._storage.set_trial_system_attr(trial._trial_id, key, optimizer_attrs[key])
 
-        # Caution: optimizer should update its seed value
-        seed = self._cma_rng.randint(1, 2 ** 16) + trial.number
-        optimizer._rng = np.random.RandomState(seed)
+        # Caution: optimizer should update its seed value.
+        seed = self._cma_rng.randint(1, 2**16) + trial.number
+        optimizer._rng.seed(seed)
         params = optimizer.ask()
 
         study._storage.set_trial_system_attr(
@@ -478,7 +473,7 @@ class CmaEsSampler(BaseSampler):
                 mean=mean,
                 sigma=sigma0,
                 bounds=trans.bounds,
-                seed=self._cma_rng.randint(1, 2 ** 31 - 2),
+                seed=self._cma_rng.randint(1, 2**31 - 2),
                 n_max_resampling=10 * n_dimension,
                 population_size=population_size,
             )
@@ -488,7 +483,7 @@ class CmaEsSampler(BaseSampler):
             sigma=sigma0,
             cov=cov,
             bounds=trans.bounds,
-            seed=self._cma_rng.randint(1, 2 ** 31 - 2),
+            seed=self._cma_rng.randint(1, 2**31 - 2),
             n_max_resampling=10 * n_dimension,
             population_size=population_size,
         )

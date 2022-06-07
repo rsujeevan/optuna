@@ -1,5 +1,4 @@
 import math
-from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import List
@@ -8,15 +7,17 @@ from typing import Tuple
 
 from packaging import version
 
-from optuna._study_direction import StudyDirection
 from optuna.logging import get_logger
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 from optuna.visualization._plotly_imports import _imports
 from optuna.visualization._utils import _check_plot_args
+from optuna.visualization._utils import _filter_nonfinite
+from optuna.visualization._utils import _get_param_values
 from optuna.visualization._utils import _is_log_scale
 from optuna.visualization._utils import _is_numerical
+from optuna.visualization._utils import _is_reverse_scale
 
 
 if _imports.is_successful():
@@ -25,6 +26,7 @@ if _imports.is_successful():
     from optuna.visualization._plotly_imports import make_subplots
     from optuna.visualization._plotly_imports import plotly
     from optuna.visualization._plotly_imports import Scatter
+    from optuna.visualization._utils import COLOR_SCALE
 
 _logger = get_logger(__name__)
 
@@ -78,23 +80,11 @@ def plot_contour(
 
     Returns:
         A :class:`plotly.graph_objs.Figure` object.
-
-    Raises:
-        :exc:`ValueError`:
-            If ``target`` is :obj:`None` and ``study`` is being used for multi-objective
-            optimization.
     """
 
     _imports.check()
     _check_plot_args(study, target, target_name)
     return _get_contour_plot(study, params, target, target_name)
-
-
-def _get_param_values(trials: List[FrozenTrial], p_name: str) -> List[Any]:
-    values = [t.params[p_name] for t in trials if p_name in t.params]
-    if _is_numerical(trials, p_name):
-        return values
-    return list(map(str, values))
 
 
 def _get_contour_plot(
@@ -106,7 +96,9 @@ def _get_contour_plot(
 
     layout = go.Layout(title="Contour Plot")
 
-    trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE]
+    trials = _filter_nonfinite(
+        study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target
+    )
 
     if len(trials) == 0:
         _logger.warning("Your study does not have any completed trials.")
@@ -154,11 +146,13 @@ def _get_contour_plot(
 
         param_values_range[p_name] = (min_value, max_value)
 
+    reverse_scale = _is_reverse_scale(study, target)
+
     if len(sorted_params) == 2:
         x_param = sorted_params[0]
         y_param = sorted_params[1]
         sub_plots = _generate_contour_subplot(
-            trials, x_param, y_param, study.directions[0], param_values_range, target, target_name
+            trials, x_param, y_param, reverse_scale, param_values_range, target, target_name
         )
         figure = go.Figure(data=sub_plots, layout=layout)
         figure.update_xaxes(title_text=x_param, range=param_values_range[x_param])
@@ -190,7 +184,7 @@ def _get_contour_plot(
                         trials,
                         x_param,
                         y_param,
-                        study.directions[0],
+                        reverse_scale,
                         param_values_range,
                         target,
                         target_name,
@@ -230,7 +224,7 @@ def _generate_contour_subplot(
     trials: List[FrozenTrial],
     x_param: str,
     y_param: str,
-    direction: StudyDirection,
+    reverse_scale: bool,
     param_values_range: Optional[Dict[str, Tuple[float, float]]] = None,
     target: Optional[Callable[[FrozenTrial], float]] = None,
     target_name: str = "Objective Value",
@@ -293,18 +287,18 @@ def _generate_contour_subplot(
         y=y_indices,
         z=z,
         colorbar={"title": target_name},
-        colorscale=plotly.colors.PLOTLY_SCALES["Blues"],
+        colorscale=COLOR_SCALE,
         connectgaps=True,
         contours_coloring="heatmap",
         hoverinfo="none",
         line_smoothing=1.3,
-        reversescale=target is None and direction == StudyDirection.MINIMIZE,
+        reversescale=reverse_scale,
     )
 
     scatter = go.Scatter(
         x=x_values,
         y=y_values,
-        marker={"line": {"width": 0.5, "color": "Grey"}, "color": "black"},
+        marker={"line": {"width": 2.0, "color": "Grey"}, "color": "black"},
         mode="markers",
         showlegend=False,
     )

@@ -1,7 +1,7 @@
 import math
+from typing import Container
 from typing import List
 from typing import Optional
-from typing import Tuple
 from typing import Union
 
 import optuna
@@ -233,7 +233,7 @@ class HyperbandPruner(BasePruner):
 
         assert self._n_brackets is not None
         s = self._n_brackets - 1 - bracket_id
-        return math.ceil(self._n_brackets * (self._reduction_factor ** s) / (s + 1))
+        return math.ceil(self._n_brackets * (self._reduction_factor**s) / (s + 1))
 
     def _get_bracket_id(
         self, study: "optuna.study.Study", trial: "optuna.trial.FrozenTrial"
@@ -284,12 +284,14 @@ class HyperbandPruner(BasePruner):
                 "_study",
             )
 
-            def __init__(self, study: "optuna.study.Study", bracket_id: int) -> None:
+            def __init__(
+                self, study: "optuna.study.Study", pruner: HyperbandPruner, bracket_id: int
+            ) -> None:
                 super().__init__(
                     study_name=study.study_name,
                     storage=study._storage,
                     sampler=study.sampler,
-                    pruner=study.pruner,
+                    pruner=pruner,
                 )
                 self._study = study
                 self._bracket_id = bracket_id
@@ -297,7 +299,7 @@ class HyperbandPruner(BasePruner):
             def get_trials(
                 self,
                 deepcopy: bool = True,
-                states: Optional[Tuple[TrialState, ...]] = None,
+                states: Optional[Container[TrialState]] = None,
             ) -> List["optuna.trial.FrozenTrial"]:
                 trials = super().get_trials(deepcopy=deepcopy, states=states)
                 pruner = self.pruner
@@ -317,4 +319,4 @@ class HyperbandPruner(BasePruner):
                 else:
                     return object.__getattribute__(self, attr_name)
 
-        return _BracketStudy(study, bracket_id)
+        return _BracketStudy(study, self, bracket_id)

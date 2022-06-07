@@ -8,6 +8,7 @@ import pytest
 import optuna
 from optuna import multi_objective
 from optuna.multi_objective.samplers import MOTPEMultiObjectiveSampler
+from optuna.samplers import MOTPESampler
 
 
 class MockSystemAttr:
@@ -21,14 +22,14 @@ class MockSystemAttr:
 @pytest.mark.filterwarnings("ignore::FutureWarning")
 def test_reseed_rng() -> None:
     sampler = MOTPEMultiObjectiveSampler()
-    original_seed = sampler._motpe_sampler._rng.seed
+    original_random_state = sampler._motpe_sampler._rng.get_state()
 
     with patch.object(
         sampler._motpe_sampler, "reseed_rng", wraps=sampler._motpe_sampler.reseed_rng
     ) as mock_object:
         sampler.reseed_rng()
         assert mock_object.call_count == 1
-        assert original_seed != sampler._motpe_sampler._rng.seed
+    assert str(original_random_state) != str(sampler._motpe_sampler._rng.get_state())
 
 
 @pytest.mark.filterwarnings("ignore::FutureWarning")
@@ -61,6 +62,10 @@ def test_sample_independent() -> None:
         y = trial.suggest_float("y", 0, 1)
         return x, y
 
-    with patch.object(sampler, "sample_independent", wraps=sampler.sample_independent) as mock:
+    with patch.object(
+        MOTPESampler,
+        "sample_independent",
+        wraps=sampler._motpe_sampler.sample_independent,
+    ) as mock:
         study.optimize(_objective, n_trials=10)
         assert mock.call_count == 20

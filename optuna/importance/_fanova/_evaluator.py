@@ -13,6 +13,7 @@ from optuna.importance._fanova._fanova import _Fanova
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
+from optuna.visualization._utils import _filter_nonfinite
 
 
 class FanovaImportanceEvaluator(BaseImportanceEvaluator):
@@ -29,12 +30,6 @@ class FanovaImportanceEvaluator(BaseImportanceEvaluator):
     .. note::
 
         Requires the `sklearn <https://github.com/scikit-learn/scikit-learn>`_ Python package.
-
-    .. note::
-
-        Pairwise and higher order importances are not supported through this class. They can be
-        computed using :class:`~optuna.importance._fanova._fanova._Fanova` directly but is not
-        recommended as interfaces may change without prior notice.
 
     .. note::
 
@@ -88,10 +83,16 @@ class FanovaImportanceEvaluator(BaseImportanceEvaluator):
         if len(distributions) == 0:
             return OrderedDict()
 
+        # fANOVA does not support parameter distributions with a single value.
+        # However, there is no reason to calculate parameter importance in such case anyway,
+        # since it will always be 0 as the parameter is constant in the objective function.
+        zero_importances = {name: 0.0 for name, dist in distributions.items() if dist.single()}
+        distributions = {name: dist for name, dist in distributions.items() if not dist.single()}
+
         trials = []
-        for trial in study.trials:
-            if trial.state != TrialState.COMPLETE:
-                continue
+        for trial in _filter_nonfinite(
+            study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target
+        ):
             if any(name not in trial.params for name in distributions.keys()):
                 continue
             trials.append(trial)
@@ -128,9 +129,10 @@ class FanovaImportanceEvaluator(BaseImportanceEvaluator):
 
         importances = {}
         for i, name in enumerate(distributions.keys()):
-            importance, _ = evaluator.get_importance((i,))
+            importance, _ = evaluator.get_importance(i)
             importances[name] = importance
 
+        importances = {**importances, **zero_importances}
         total_importance = sum(importances.values())
         for name in importances:
             importances[name] /= total_importance
