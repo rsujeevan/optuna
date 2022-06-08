@@ -381,6 +381,11 @@ class _LightGBMBaseTuner(_BaseTuner):
             # custom objective
             params['objective'] = fobj
 
+        if early_stopping_rounds is not None and verbose_eval:
+            callbacks = [early_stopping(early_stopping), log_evaluation(early_stopping)]
+        elif early_stopping_rounds is not None and not verbose_eval:
+            callbacks = [early_stopping(early_stopping)]
+
         # Handling alias metrics.
         _handling_alias_metrics(params)
 
@@ -390,8 +395,6 @@ class _LightGBMBaseTuner(_BaseTuner):
             feval=feval,
             feature_name=feature_name,
             categorical_feature=categorical_feature,
-            early_stopping_rounds=early_stopping_rounds,
-            verbose_eval=verbose_eval,
             callbacks=callbacks,
             time_budget=time_budget,
             sample_size=sample_size,
