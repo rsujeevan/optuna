@@ -377,14 +377,16 @@ class _LightGBMBaseTuner(_BaseTuner):
 
         params = copy.deepcopy(params)
 
+        from lightgbm import early_stopping
+        from lightgbm import log_evaluation
         if fobj is not None:
             # custom objective
             params['objective'] = fobj
 
         if early_stopping_rounds is not None and verbose_eval:
-            callbacks = [early_stopping(early_stopping), log_evaluation(early_stopping)]
+            callbacks = [early_stopping(early_stopping_rounds), log_evaluation(early_stopping_rounds)]
         elif early_stopping_rounds is not None and not verbose_eval:
-            callbacks = [early_stopping(early_stopping)]
+            callbacks = [early_stopping(early_stopping_rounds)]
 
         # Handling alias metrics.
         _handling_alias_metrics(params)
@@ -1026,7 +1028,7 @@ class LightGBMTunerCV(_LightGBMBaseTuner):
         self.lgbm_kwargs["nfold"] = nfold
         self.lgbm_kwargs["stratified"] = stratified
         self.lgbm_kwargs["shuffle"] = shuffle
-        self.lgbm_kwargs["show_stdv"] = show_stdv
+       # self.lgbm_kwargs["show_stdv"] = show_stdv
         self.lgbm_kwargs["seed"] = seed
         self.lgbm_kwargs["fpreproc"] = fpreproc
         self.lgbm_kwargs["return_cvbooster"] = return_cvbooster
