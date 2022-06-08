@@ -377,13 +377,16 @@ class _LightGBMBaseTuner(_BaseTuner):
 
         params = copy.deepcopy(params)
 
+        if fobj is not None:
+            # custom objective
+            params['objective'] = fobj
+
         # Handling alias metrics.
         _handling_alias_metrics(params)
 
         args = [params, train_set]
         kwargs: Dict[str, Any] = dict(
             num_boost_round=num_boost_round,
-            fobj=fobj,
             feval=feval,
             feature_name=feature_name,
             categorical_feature=categorical_feature,
