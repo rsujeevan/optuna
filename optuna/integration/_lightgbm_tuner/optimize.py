@@ -307,7 +307,7 @@ class _OptunaObjectiveCV(_OptunaObjective):
     def _get_cv_scores(self, cv_results: Dict[str, List[float]]) -> List[float]:
 
         metric = self._get_metric_for_objective()
-        val_scores = cv_results["{}-mean".format(metric)]
+        val_scores = cv_results["valid {}-mean".format(metric)]
         return val_scores
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
@@ -1028,7 +1028,7 @@ class LightGBMTunerCV(_LightGBMBaseTuner):
         self.lgbm_kwargs["nfold"] = nfold
         self.lgbm_kwargs["stratified"] = stratified
         self.lgbm_kwargs["shuffle"] = shuffle
-       # self.lgbm_kwargs["show_stdv"] = show_stdv
+        # self.lgbm_kwargs["show_stdv"] = show_stdv
         self.lgbm_kwargs["seed"] = seed
         self.lgbm_kwargs["fpreproc"] = fpreproc
         self.lgbm_kwargs["return_cvbooster"] = return_cvbooster
