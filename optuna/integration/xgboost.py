@@ -75,9 +75,9 @@ if _imports.is_successful() and use_callback_cls:
             self._trial.report(current_score, step=epoch)
             self._trial.was_pruned = False
             if self._trial.should_prune():
-                message = "Trial was pruned at iteration {}.".format(epoch)
                 self._trial.was_pruned = True
                 if self._raise_type is None or self._raise_type == "prune":
+                    message = "Trial was pruned at iteration {}.".format(epoch)
                     raise optuna.TrialPruned(message)
                 else:
                     return True  # just early stop
@@ -103,9 +103,10 @@ elif _imports.is_successful():
     class XGBoostPruningCallback:  # type: ignore
         __doc__ = _doc
 
-        def __init__(self, trial: optuna.trial.Trial, observation_key: str) -> None:
+        def __init__(self, trial: optuna.trial.Trial, observation_key: str, raise_type=None) -> None:
             self._trial = trial
             self._observation_key = observation_key
+            self._raise_type = raise_type
 
         def __call__(self, env: "xgb.core.CallbackEnv") -> None:
 
@@ -124,10 +125,14 @@ elif _imports.is_successful():
                 key = evaluation_result_list[0][0]
                 current_score = dict(evaluation_result_list)[key]
             self._trial.report(current_score, step=env.iteration)
+            self._trial.was_pruned = False
             if self._trial.should_prune():
-                message = "Trial was pruned at iteration {}.".format(env.iteration)
-                raise optuna.TrialPruned(message)
-
+                self._trial.was_pruned = True
+                if self._raise_type is None or self._raise_type == "prune":
+                    message = "Trial was pruned at iteration {}.".format(env.iteration)
+                    raise optuna.TrialPruned(message)
+                else:
+                    return True  # just early stop
 else:
 
     class XGBoostPruningCallback:  # type: ignore
