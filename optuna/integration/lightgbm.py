@@ -126,7 +126,7 @@ class LightGBMPruningCallback(object):
                 target_valid_name = env.evaluation_result_list[0][0]
             if self._metric is None:
                 # just use first key
-                target_valid_name = env.evaluation_result_list[0][1]
+                self._metric = env.evaluation_result_list[0][1]
 
             evaluation_result = self._find_evaluation_result(target_valid_name, env)
 
