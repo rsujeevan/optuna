@@ -1,23 +1,29 @@
+from __future__ import annotations
+
 import sys
-from typing import List
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import optuna
 from optuna._imports import try_import
 from optuna.integration import _lightgbm_tuner as tuner
 
 
+if TYPE_CHECKING:
+    from lightgbm.basic import _LGBM_BoosterEvalMethodResultType
+    from lightgbm.callback import CallbackEnv
+
+
 with try_import() as _imports:
-    import lightgbm as lgb  # NOQA
-    from lightgbm.callback import CallbackEnv, EarlyStopException  # NOQA
+    import lightgbm as lgb
+    from lightgbm.callback import EarlyStopException
 
 # Attach lightgbm API.
 if _imports.is_successful():
     # To pass tests/integration_tests/lightgbm_tuner_tests/test_optimize.py.
-    from lightgbm import Dataset  # NOQA
+    from lightgbm import Dataset
 
-    from optuna.integration._lightgbm_tuner import LightGBMTuner  # NOQA
-    from optuna.integration._lightgbm_tuner import LightGBMTunerCV  # NOQA
+    from optuna.integration._lightgbm_tuner import LightGBMTuner
+    from optuna.integration._lightgbm_tuner import LightGBMTunerCV
 
     _names_from_tuners = ["train", "LGBMModel", "LGBMClassifier", "LGBMRegressor"]
 
@@ -36,8 +42,10 @@ else:
     setattr(sys.modules[__name__], "LightGBMTuner", tuner.__dict__["LightGBMTuner"])
     setattr(sys.modules[__name__], "LightGBMTunerCV", tuner.__dict__["LightGBMTunerCV"])
 
+__all__ = ["Dataset", "LightGBMTuner", "LightGBMTunerCV"]
 
-class LightGBMPruningCallback(object):
+
+class LightGBMPruningCallback:
     """Callback for LightGBM to prune unpromising trials.
 
     See `the example <https://github.com/optuna/optuna-examples/blob/main/
@@ -79,7 +87,6 @@ class LightGBMPruningCallback(object):
         report_interval: int = 1,
         raise_type=None,
     ) -> None:
-
         _imports.check()
 
         self._trial = trial
@@ -89,33 +96,42 @@ class LightGBMPruningCallback(object):
         self._raise_type = raise_type
 
     def _find_evaluation_result(
-        self, target_valid_name: str, env: "CallbackEnv"
-    ) -> Optional[List]:
+        self, target_valid_name: str, env: CallbackEnv
+    ) -> _LGBM_BoosterEvalMethodResultType | None:
+        evaluation_result_list = env.evaluation_result_list
+        if evaluation_result_list is None:
+            return None
 
         if target_valid_name is None:
             # just use first key
-            target_valid_name = env.evaluation_result_list[0][0]
+            target_valid_name = evaluation_result_list[0][0]
         if self._metric is None:
             # just use first key
-            self._metric = env.evaluation_result_list[0][1]
+            self._metric = evaluation_result_list[0][1]
 
-        for evaluation_result in env.evaluation_result_list:
+        for evaluation_result in evaluation_result_list:
             valid_name, metric, current_score, is_higher_better = evaluation_result[:4]
-            if valid_name != target_valid_name or metric != self._metric:
+            # The prefix "valid " is added to metric name since LightGBM v4.0.0.
+            if valid_name != target_valid_name or (
+                metric != "valid " + self._metric and metric != self._metric
+            ):
                 continue
-
             return evaluation_result
 
         return None
 
-    def __call__(self, env: "CallbackEnv") -> None:
-
+    def __call__(self, env: CallbackEnv) -> None:
         if (env.iteration + 1) % self._report_interval == 0:
             # If this callback has been passed to `lightgbm.cv` function,
             # the value of `is_cv` becomes `True`. See also:
-            # https://github.com/Microsoft/LightGBM/blob/v2.2.2/python-package/lightgbm/engine.py#L329
+            # https://github.com/microsoft/LightGBM/blob/v4.1.0/python-package/lightgbm/engine.py#L533
             # Note that `5` is not the number of folds but the length of sequence.
-            is_cv = len(env.evaluation_result_list) > 0 and len(env.evaluation_result_list[0]) == 5
+            evaluation_result_list = env.evaluation_result_list
+            is_cv = (
+                evaluation_result_list is not None
+                and len(evaluation_result_list) > 0
+                and len(evaluation_result_list[0]) == 5
+            )
             if is_cv:
                 target_valid_name = "cv_agg"
             else:

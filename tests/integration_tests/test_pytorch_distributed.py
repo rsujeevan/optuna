@@ -1,22 +1,33 @@
 import datetime
-import itertools
 import os
 from typing import Optional
 
 import pytest
-import torch
-import torch.distributed as dist
 
 import optuna
+from optuna._imports import try_import
 from optuna.integration import TorchDistributedTrial
-from optuna.testing.integration import DeterministicPruner
-from optuna.testing.storage import STORAGE_MODES
-from optuna.testing.storage import StorageSupplier
+from optuna.testing.pruners import DeterministicPruner
+from optuna.testing.storages import StorageSupplier
+
+
+with try_import():
+    import torch
+    import torch.distributed as dist
+
+pytestmark = pytest.mark.integration
+
+STORAGE_MODES = [
+    "inmemory",
+    "sqlite",
+    "cached_sqlite",
+    "journal",
+    "journal_redis",
+]
 
 
 @pytest.fixture(scope="session", autouse=True)
 def init_process_group() -> None:
-
     if "OMPI_COMM_WORLD_SIZE" not in os.environ:
         pytest.skip("This test is expected to be launch with mpirun.")
 
@@ -66,6 +77,7 @@ def test_suggest_float(storage_mode: str) -> None:
 
 
 @pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_uniform(storage_mode: str) -> None:
     with StorageSupplier(storage_mode) as storage:
@@ -83,6 +95,7 @@ def test_suggest_uniform(storage_mode: str) -> None:
 
 
 @pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_loguniform(storage_mode: str) -> None:
     with StorageSupplier(storage_mode) as storage:
@@ -100,6 +113,7 @@ def test_suggest_loguniform(storage_mode: str) -> None:
 
 
 @pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
+@pytest.mark.filterwarnings("ignore::FutureWarning")
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_suggest_discrete_uniform(storage_mode: str) -> None:
     with StorageSupplier(storage_mode) as storage:
@@ -181,7 +195,7 @@ def test_report_nan(storage_mode: str) -> None:
             trial = TorchDistributedTrial(None)
 
         with pytest.raises(TypeError):
-            trial.report("abc", 0)  # type: ignore
+            trial.report("abc", 0)  # type: ignore[arg-type]
 
         if dist.get_rank() == 0:
             assert study is not None
@@ -189,9 +203,8 @@ def test_report_nan(storage_mode: str) -> None:
 
 
 @pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
-@pytest.mark.parametrize(
-    "storage_mode, is_pruning", itertools.product(STORAGE_MODES, [False, True])
-)
+@pytest.mark.parametrize("storage_mode", STORAGE_MODES)
+@pytest.mark.parametrize("is_pruning", [False, True])
 def test_should_prune(storage_mode: str, is_pruning: bool) -> None:
     with StorageSupplier(storage_mode) as storage:
         if dist.get_rank() == 0:
@@ -232,36 +245,6 @@ def test_user_attrs_with_exception() -> None:
 
         with pytest.raises(TypeError):
             trial.set_user_attr("not serializable", torch.Tensor([1, 2]))
-
-
-@pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
-@pytest.mark.parametrize("storage_mode", STORAGE_MODES)
-def test_system_attrs(storage_mode: str) -> None:
-    with StorageSupplier(storage_mode) as storage:
-        if dist.get_rank() == 0:
-            study = optuna.create_study(storage=storage)
-            trial = TorchDistributedTrial(study.ask())
-        else:
-            trial = TorchDistributedTrial(None)
-
-        trial.set_system_attr("dataset", "mnist")
-        trial.set_system_attr("batch_size", 128)
-
-        assert trial.system_attrs["dataset"] == "mnist"
-        assert trial.system_attrs["batch_size"] == 128
-
-
-@pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
-def test_system_attrs_with_exception() -> None:
-    with StorageSupplier("sqlite") as storage:
-        if dist.get_rank() == 0:
-            study = optuna.create_study(storage=storage)
-            trial = TorchDistributedTrial(study.ask())
-        else:
-            trial = TorchDistributedTrial(None)
-
-        with pytest.raises(TypeError):
-            trial.set_system_attr("not serializable", torch.Tensor([1, 2]))
 
 
 @pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
@@ -368,3 +351,20 @@ def test_updates_properties(storage_mode: str) -> None:
             [getattr(trial, p) for p in property_names]
 
         dist.barrier()
+
+
+@pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
+@pytest.mark.parametrize("storage_mode", STORAGE_MODES)
+def test_pass_frozen_trial_to_torch_distributed(storage_mode: str) -> None:
+    # Regression test of #4697
+    def objective(trial: optuna.trial.BaseTrial) -> float:
+        trial = optuna.integration.TorchDistributedTrial(trial if dist.get_rank() == 0 else None)
+        x = trial.suggest_float("x", low=-100, high=100)
+        return x * x
+
+    with StorageSupplier(storage_mode) as storage:
+        study = optuna.create_study(direction="minimize", storage=storage)
+        study.optimize(objective, n_trials=1)
+        best_trial = study.best_trial
+
+        objective(best_trial)

@@ -7,11 +7,10 @@ on:
   push:
     branches:
       - master
-  pull_request:
-    paths:
-      - '.github/workflows/mac-tests.yml'
+  pull_request: {}
   schedule:
     - cron: '0 23 * * SUN-THU'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.run_number || github.ref }}
@@ -21,26 +20,26 @@ jobs:
   tests-mac:
     runs-on: macos-latest
 
-    # Not intended for forks.
-    if: github.repository == 'optuna/optuna'
+    # Scheduled Tests are disabled for forks.
+    if: (github.event_name == 'schedule' && github.repository == 'optuna/optuna') || (github.event_name != 'schedule')
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup Python3.8
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.8
 
     - name: Setup cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       env:
         cache-name: test
       with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}-v1
+        path: ~/Library/Caches/pip
+        key: ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}-v1
         restore-keys: |
-          ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}
+          ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}
 
     - name: Install
       run: |
@@ -52,45 +51,52 @@ jobs:
         optuna --version
         pip install --progress-bar off .[test]
         pip install --progress-bar off .[optional]
-        # Required for samplers_tests/test_samplers.py.
-        # TODO(hvy): Fix samplers_tests/test_samplers.py to not require optional depenendencies and remove these installs.
-        pip install scikit-optimize
-        pip install cma
-        pip install botorch torch==1.10.0
 
-    - name: Tests
+    - name: Output installed packages
       run: |
-        pytest tests --ignore tests/integration_tests
+        pip freeze --all
+    - name: Output dependency tree
+      run: |
+        pip install pipdeptree
+        pipdeptree
+
+
+    - name: Scheduled tests
+      if:  ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+      run: |
+        pytest tests -m "not integration"
+    - name: Tests
+      if:  ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+      run: |
+        pytest tests -m "not integration and not slow"
+
 
   tests-integration-mac:
     runs-on: macos-latest
 
-    # Not intended for forks.
-    if: github.repository == 'optuna/optuna'
+    # Scheduled Tests are disabled for forks.
+    if: (github.event_name == 'schedule' && github.repository == 'optuna/optuna') || (github.event_name != 'schedule')
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup Python3.8
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.8
 
     - name: Setup cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       env:
         cache-name: test-integration
       with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}-v1
+        path: ~/Library/Caches/pip
+        key: ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}-v1
         restore-keys: |
-          ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}
+          ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}
 
     - name: Setup mac environment
       run: |
-        # TODO(nzw0301): remove libomp version constraint if xgboost can work with libomp>11.1.0
-        # https://github.com/dmlc/xgboost/blob/c42e3fbcf3901eec73fcdbf02526f611ef3ed05f/.github/workflows/main.yml#L24-L25
-        wget https://raw.githubusercontent.com/Homebrew/homebrew-core/679923b4eb48a8dc7ecc1f05d06063cd79b3fc00/Formula/libomp.rb -O $(find $(brew --repository) -name libomp.rb)
         brew install libomp
         brew install open-mpi
         brew install openblas
@@ -108,27 +114,25 @@ jobs:
         pip install --progress-bar off .[optional]
         pip install --progress-bar off .[integration]
 
+    - name: Output installed packages
+      run: |
+        pip freeze --all
+    - name: Output dependency tree
+      run: |
+        pip install pipdeptree
+        pipdeptree
+
 
     - name: Tests
       run: |
-        # 'pytest tests/integration_tests' causes segmentation fault at the end of
-        # tests/integration_tests/test_lightgbm.py as shown in
-        # https://github.com/optuna/optuna/issues/2695. It can be completed if we
-        # execute tests individually.
-        # TODO(nzw0301): Remove the skip of lightning when resolving
-        # https://github.com/optuna/optuna/issues/3418.
-        for file in `find tests/integration_tests -name 'test_*.py' \
-          ! -name '*test_pytorch_lightning.py' -print`;
-        do
-          pytest $file;
-        done
+        pytest tests -m "integration"
 
       env:
         OMP_NUM_THREADS: 1
 
     - name: Tests MPI
       run: |
-        mpirun -n 2 -- pytest tests/integration_tests/test_chainermn.py
+        export OMPI_MCA_rmaps_base_oversubscribe=yes
         mpirun -n 2 -- pytest tests/integration_tests/test_pytorch_distributed.py
       env:
         OMP_NUM_THREADS: 1

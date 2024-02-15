@@ -1,7 +1,7 @@
+from __future__ import annotations
+
 import math
 import sys
-from typing import List
-from typing import Union
 
 import numpy as np
 import shape_functions
@@ -10,16 +10,15 @@ import transformation_functions
 from kurobako import problem
 
 
-class BaseWFG(object):
+class BaseWFG:
     def __init__(
         self,
         S: np.ndarray,
         A: np.ndarray,
         upper_bounds: np.ndarray,
-        shapes: List[shape_functions.BaseShapeFunction],
-        transformations: List[List[transformation_functions.BaseTransformations]],
+        shapes: list[shape_functions.BaseShapeFunction],
+        transformations: list[list[transformation_functions.BaseTransformations]],
     ) -> None:
-
         assert all(S > 0)
         assert all((A == 0) + (A == 1))
         assert all(upper_bounds > 0)
@@ -31,7 +30,6 @@ class BaseWFG(object):
         self._transformations = transformations
 
     def __call__(self, z: np.ndarray) -> np.ndarray:
-
         S = self._S
         A = self._A
         unit_z = z / self._upper_bounds
@@ -56,7 +54,7 @@ class BaseWFG(object):
         return f
 
 
-class WFG1(object):
+class WFG1:
     """WFG1
 
     Args:
@@ -69,7 +67,6 @@ class WFG1(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments
 
@@ -87,11 +84,11 @@ class WFG1(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConvexShapeFunction(M) for _ in range(M - 1)]
         shapes.append(shape_functions.MixedConvexOrConcaveShapeFunction(M, 1, 5))
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(4)]
 
         transformations[0] = [transformation_functions.IdenticalTransformation() for _ in range(k)]
@@ -135,7 +132,7 @@ class WFG1(object):
         return self.wfg.__call__(z)
 
 
-class WFG2(object):
+class WFG2:
     """WFG2
 
     Args:
@@ -148,7 +145,6 @@ class WFG2(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments // 2
         assert (n_arguments - k) % 2 == 0
@@ -167,11 +163,11 @@ class WFG2(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConvexShapeFunction(M) for _ in range(M - 1)]
         shapes.append(shape_functions.DisconnectedShapeFunction(M, 1, 1, 5))
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(3)]
 
         transformations[0] = [transformation_functions.IdenticalTransformation() for _ in range(k)]
@@ -216,7 +212,7 @@ class WFG2(object):
         return self.wfg.__call__(z)
 
 
-class WFG3(object):
+class WFG3:
     """WFG3
 
     Args:
@@ -229,7 +225,6 @@ class WFG3(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments // 2
         assert (n_arguments - k) % 2 == 0
@@ -249,10 +244,10 @@ class WFG3(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.LinearShapeFunction(M) for _ in range(M)]
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(3)]
 
         transformations[0] = [transformation_functions.IdenticalTransformation() for _ in range(k)]
@@ -297,7 +292,7 @@ class WFG3(object):
         return self.wfg.__call__(z)
 
 
-class WFG4(object):
+class WFG4:
     """WFG4
 
     Args:
@@ -310,7 +305,6 @@ class WFG4(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments
 
@@ -328,10 +322,10 @@ class WFG4(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConcaveShapeFunction(M) for _ in range(M)]
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(2)]
 
         transformations[0] = [
@@ -364,7 +358,7 @@ class WFG4(object):
         return self.wfg.__call__(z)
 
 
-class WFG5(object):
+class WFG5:
     """WFG5
 
     Args:
@@ -377,7 +371,6 @@ class WFG5(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments
 
@@ -395,10 +388,10 @@ class WFG5(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConcaveShapeFunction(M) for _ in range(M)]
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(2)]
 
         transformations[0] = [
@@ -432,7 +425,7 @@ class WFG5(object):
         return self.wfg.__call__(z)
 
 
-class WFG6(object):
+class WFG6:
     """WFG6
 
     Args:
@@ -445,7 +438,6 @@ class WFG6(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments
 
@@ -463,10 +455,10 @@ class WFG6(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConcaveShapeFunction(M) for _ in range(M)]
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(2)]
 
         transformations[0] = [transformation_functions.IdenticalTransformation() for _ in range(k)]
@@ -499,7 +491,7 @@ class WFG6(object):
         return self.wfg.__call__(z)
 
 
-class WFG7(object):
+class WFG7:
     """WFG7
 
     Args:
@@ -512,7 +504,6 @@ class WFG7(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments
 
@@ -530,13 +521,13 @@ class WFG7(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConcaveShapeFunction(M) for _ in range(M)]
 
         def _input_converter0(i: int, y: np.ndarray) -> np.ndarray:
             return y[i:n]
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(3)]
 
         transformations[0] = [
@@ -583,7 +574,7 @@ class WFG7(object):
         return self.wfg.__call__(z)
 
 
-class WFG8(object):
+class WFG8:
     """WFG8
 
     Args:
@@ -596,7 +587,6 @@ class WFG8(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments
 
@@ -614,13 +604,13 @@ class WFG8(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConcaveShapeFunction(M) for _ in range(M)]
 
         def _input_converter0(i: int, y: np.ndarray) -> np.ndarray:
             return y[: i - 1]
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(3)]
 
         transformations[0] = [transformation_functions.IdenticalTransformation() for _ in range(k)]
@@ -666,7 +656,7 @@ class WFG8(object):
         return self.wfg.__call__(z)
 
 
-class WFG9(object):
+class WFG9:
     """WFG9
 
     Args:
@@ -679,7 +669,6 @@ class WFG9(object):
     """
 
     def __init__(self, n_arguments: int, n_objectives: int, k: int):
-
         assert k % (n_objectives - 1) == 0
         assert k + 1 <= n_arguments
 
@@ -697,13 +686,13 @@ class WFG9(object):
         self.domain = np.zeros((n, 2))
         self.domain[:, 1] = upper_bounds
 
-        shapes: List[shape_functions.BaseShapeFunction]
+        shapes: list[shape_functions.BaseShapeFunction]
         shapes = [shape_functions.ConcaveShapeFunction(M) for _ in range(M)]
 
         def _input_converter0(i: int, y: np.ndarray) -> np.ndarray:
             return y[i:n]
 
-        transformations: List[List[transformation_functions.BaseTransformations]]
+        transformations: list[list[transformation_functions.BaseTransformations]]
         transformations = [[] for _ in range(3)]
 
         transformations[0] = [
@@ -779,12 +768,12 @@ class WFGProblem(problem.Problem):
     def __init__(self) -> None:
         super().__init__()
 
-    def create_evaluator(self, params: List[problem.Var]) -> problem.Evaluator:
+    def create_evaluator(self, params: list[problem.Var]) -> problem.Evaluator:
         return WFGEvaluator(params)
 
 
 class WFGEvaluator(problem.Evaluator):
-    def __init__(self, params: List[problem.Var]) -> None:
+    def __init__(self, params: list[problem.Var]) -> None:
         self._n_wfg = int(sys.argv[1])
         self._n_dim = int(sys.argv[2])
         self._n_obj = int(sys.argv[3])
@@ -793,7 +782,7 @@ class WFGEvaluator(problem.Evaluator):
         self._x = np.array(params)
         self._current_step = 0
 
-        self.wfg: Union[WFG1, WFG2, WFG3, WFG4, WFG5, WFG6, WFG7, WFG8, WFG9]
+        self.wfg: WFG1 | WFG2 | WFG3 | WFG4 | WFG5 | WFG6 | WFG7 | WFG8 | WFG9
         if self._n_wfg == 1:
             self.wfg = WFG1(n_arguments=self._n_dim, n_objectives=self._n_obj, k=self._k)
         elif self._n_wfg == 2:
@@ -818,7 +807,7 @@ class WFGEvaluator(problem.Evaluator):
     def current_step(self) -> int:
         return self._current_step
 
-    def evaluate(self, next_step: int) -> List[float]:
+    def evaluate(self, next_step: int) -> list[float]:
         self._current_step = 1
         v = self.wfg(self._x)
         v = v.tolist()

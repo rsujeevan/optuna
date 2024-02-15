@@ -19,10 +19,18 @@ on:
         description: 'Pruner Arguments List: A list of pruner keyword arguments. Should be a whitespace-separated list of json format dictionaries.'
         required: false
         default: '{}'
+      budget:
+        description: 'Number of Trials if the pruning is not enabled. If the pruning is enabled, the total number of steps is equal to `budget * (steps per trial)`.'
+        required: false
+        default: '100'
       n-runs:
         description: 'Number of Studies'
         required: false
         default: '10'
+      n-concurrency:
+        description: 'Number of Concurrent Trials'
+        required: false
+        default: '1'
 
 
 jobs:
@@ -31,10 +39,10 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup Python3.8
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.8
 
@@ -44,15 +52,15 @@ jobs:
         sudo apt -y install gnuplot
 
     - name: Setup cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       env:
         # Caches them under a common name so that they can be used by other performance benchmark.
         cache-name: performance-benchmarks
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}-v1
+        key: ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}-v1
         restore-keys: |
-          ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}
+          ${{ runner.os }}-3.8-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}
 
     - name: Install Python libralies
       run: |
@@ -68,7 +76,7 @@ jobs:
 
     - name: Cache kurobako CLI
       id: cache-kurobako
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ./kurobako
         key: kurobako-0-2-10
@@ -90,10 +98,18 @@ jobs:
         pip install --upgrade pip setuptools wheel
         pip install -e .
         cd ..
-        
+
+    - name: Output installed packages
+      run: |
+        pip freeze --all
+    - name: Output dependency tree
+      run: |
+        pip install pipdeptree
+        pipdeptree
+
     - name: Cache nasbench201-cifar10 dataset
       id: cache-nb201-cifar10-dataset
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: NASLib/naslib/data/nb201_cifar10_full_training.pickle
         key: cache-nb201-cifar10
@@ -114,13 +130,12 @@ jobs:
         }
         wget_gdrive 1sh8pEhdrgZ97-VFBVL94rI36gedExVgJ nb201_cifar10_full_training.pickle
         cd ../../../
-    
+
     - name: Cache nasbench201-cifar100 dataset
       id: cache-nb201-cifar100-dataset
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: NASLib/naslib/data/nb201_cifar100_full_training.pickle
-        
         key: cache-nb201-cifar100
 
     - name: Download nasbench201-cifar100 dataset
@@ -142,10 +157,9 @@ jobs:
 
     - name: Cache nasbench201-imagenet16 dataset
       id: cache-nb201-imagenet16-dataset
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: NASLib/naslib/data/nb201_ImageNet16_full_training.pickle
-        
         key: cache-nb201-imagenet16
 
     - name: Download nasbench201-imagenet16 dataset
@@ -171,8 +185,10 @@ jobs:
         python benchmarks/run_naslib.py \
           --path-to-kurobako "." \
           --name-prefix "" \
+          --budget ${{ github.event.inputs.budget }} \
           --n-runs ${{ github.event.inputs.n-runs }} \
           --n-jobs 6 \
+          --n-concurrency ${{ github.event.inputs.n-concurrency }} \
           --sampler-list '${{ github.event.inputs.sampler-list }}' \
           --sampler-kwargs-list '${{ github.event.inputs.sampler-kwargs-list }}' \
           --pruner-list '${{ github.event.inputs.pruner-list }}' \
@@ -180,7 +196,7 @@ jobs:
           --seed 0 \
           --out-dir "out"
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
         name: benchmark-report
         path: |

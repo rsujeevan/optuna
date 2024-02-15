@@ -1,4 +1,4 @@
-from typing import Tuple
+from __future__ import annotations
 
 import pandas as pd
 import pytest
@@ -6,13 +6,12 @@ import pytest
 from optuna import create_study
 from optuna import create_trial
 from optuna import Trial
-from optuna.testing.storage import STORAGE_MODES
-from optuna.testing.storage import StorageSupplier
+from optuna.testing.storages import STORAGE_MODES
+from optuna.testing.storages import StorageSupplier
 from optuna.trial import TrialState
 
 
 def test_study_trials_dataframe_with_no_trials() -> None:
-
     study_with_no_trials = create_study()
     trials_df = study_with_no_trials.trials_dataframe()
     assert trials_df.empty
@@ -49,14 +48,12 @@ def test_study_trials_dataframe_with_no_trials() -> None:
     ],
 )
 @pytest.mark.parametrize("multi_index", [True, False])
-def test_trials_dataframe(storage_mode: str, attrs: Tuple[str, ...], multi_index: bool) -> None:
+def test_trials_dataframe(storage_mode: str, attrs: tuple[str, ...], multi_index: bool) -> None:
     def f(trial: Trial) -> float:
-
         x = trial.suggest_int("x", 1, 1)
         y = trial.suggest_categorical("y", (2.5,))
-        assert isinstance(y, float)
         trial.set_user_attr("train_loss", 3)
-        trial.set_system_attr("foo", "bar")
+        trial.storage.set_trial_system_attr(trial._trial_id, "foo", "bar")
         value = x + y  # 3.5
 
         # Test reported intermediate values, although it in practice is not "intermediate".
@@ -127,7 +124,6 @@ def test_trials_dataframe(storage_mode: str, attrs: Tuple[str, ...], multi_index
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_trials_dataframe_with_failure(storage_mode: str) -> None:
     def f(trial: Trial) -> float:
-
         x = trial.suggest_int("x", 1, 1)
         y = trial.suggest_categorical("y", (2.5,))
         trial.set_user_attr("train_loss", 3)
@@ -155,54 +151,50 @@ def test_trials_dataframe_with_failure(storage_mode: str) -> None:
             assert df.user_attrs_train_loss[i] == 3
 
 
-@pytest.mark.parametrize(
-    "attrs",
-    [
-        ("value",),
-        ("values",),
-    ],
-)
+@pytest.mark.parametrize("attrs", [("value",), ("values",)])
 @pytest.mark.parametrize("multi_index", [True, False])
 def test_trials_dataframe_with_multi_objective_optimization(
-    attrs: Tuple[str, ...], multi_index: bool
+    attrs: tuple[str, ...], multi_index: bool
 ) -> None:
-    def f(trial: Trial) -> Tuple[float, float]:
-
+    def f(trial: Trial) -> tuple[float, float]:
         x = trial.suggest_float("x", 1, 1)
         y = trial.suggest_float("y", 2, 2)
 
         return x + y, x**2 + y**2  # 3, 5
 
+    # without set_metric_names()
     study = create_study(directions=["minimize", "maximize"])
-    study.optimize(f, n_trials=3)
+    study.optimize(f, n_trials=1)
     df = study.trials_dataframe(attrs=attrs, multi_index=multi_index)
-
     if multi_index:
-        for i in range(3):
-            assert df.get("values")[0][i] == 3
-            assert df.get("values")[1][i] == 5
+        assert df.get("values")[0][0] == 3
+        assert df.get("values")[1][0] == 5
     else:
-        for i in range(3):
-            assert df.values_0[i] == 3
-            assert df.values_1[i] == 5
+        assert df.values_0[0] == 3
+        assert df.values_1[0] == 5
+
+    # with set_metric_names()
+    study.set_metric_names(["v0", "v1"])
+    df = study.trials_dataframe(attrs=attrs, multi_index=multi_index)
+    if multi_index:
+        assert df.get("values")["v0"][0] == 3
+        assert df.get("values")["v1"][0] == 5
+    else:
+        assert df.get("values_v0")[0] == 3
+        assert df.get("values_v1")[0] == 5
 
 
-@pytest.mark.parametrize(
-    "attrs",
-    [
-        ("value",),
-        ("values",),
-    ],
-)
+@pytest.mark.parametrize("attrs", [("value",), ("values",)])
 @pytest.mark.parametrize("multi_index", [True, False])
 def test_trials_dataframe_with_multi_objective_optimization_with_fail_and_pruned(
-    attrs: Tuple[str, ...], multi_index: bool
+    attrs: tuple[str, ...], multi_index: bool
 ) -> None:
     study = create_study(directions=["minimize", "maximize"])
     study.add_trial(create_trial(state=TrialState.FAIL))
     study.add_trial(create_trial(state=TrialState.PRUNED))
     df = study.trials_dataframe(attrs=attrs, multi_index=multi_index)
 
+    # without set_metric_names()
     if multi_index:
         for i in range(2):
             assert df.get("values")[0][i] is None
@@ -211,3 +203,13 @@ def test_trials_dataframe_with_multi_objective_optimization_with_fail_and_pruned
         for i in range(2):
             assert df.values_0[i] is None
             assert df.values_1[i] is None
+
+    # with set_metric_names()
+    study.set_metric_names(["v0", "v1"])
+    df = study.trials_dataframe(attrs=attrs, multi_index=multi_index)
+    if multi_index:
+        assert df.get("values")["v0"][0] is None
+        assert df.get("values")["v1"][0] is None
+    else:
+        assert df.get("values_v0")[0] is None
+        assert df.get("values_v1")[0] is None

@@ -1,4 +1,3 @@
-from collections import OrderedDict
 from typing import Callable
 from typing import Dict
 from typing import List
@@ -9,11 +8,14 @@ import numpy
 from optuna._imports import try_import
 from optuna._transform import _SearchSpaceTransform
 from optuna.importance._base import _get_distributions
+from optuna.importance._base import _get_filtered_trials
+from optuna.importance._base import _get_target_values
+from optuna.importance._base import _get_trans_params
+from optuna.importance._base import _param_importances_to_dict
+from optuna.importance._base import _sort_dict_by_importance
 from optuna.importance._base import BaseImportanceEvaluator
 from optuna.study import Study
 from optuna.trial import FrozenTrial
-from optuna.trial import TrialState
-from optuna.visualization._utils import _filter_nonfinite
 
 
 with try_import() as _imports:
@@ -23,13 +25,14 @@ with try_import() as _imports:
 class MeanDecreaseImpurityImportanceEvaluator(BaseImportanceEvaluator):
     """Mean Decrease Impurity (MDI) parameter importance evaluator.
 
-    This evaluator fits a random forest that predicts objective values given hyperparameter
-    configurations. Feature importances are then computed using MDI.
+    This evaluator fits fits a random forest regression model that predicts the objective values
+    of :class:`~optuna.trial.TrialState.COMPLETE` trials given their parameter configurations.
+    Feature importances are then computed using MDI.
 
     .. note::
 
-        This evaluator requires the `sklean <https://scikit-learn.org/stable/>`_ Python package and
-        is based on `sklearn.ensemble.RandomForestClassifier.feature_importances_
+        This evaluator requires the `sklearn <https://scikit-learn.org/stable/>`_ Python package
+        and is based on `sklearn.ensemble.RandomForestClassifier.feature_importances_
         <https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html#sklearn.ensemble.RandomForestClassifier.feature_importances_>`_.
 
     Args:
@@ -71,42 +74,25 @@ class MeanDecreaseImpurityImportanceEvaluator(BaseImportanceEvaluator):
                 "`target=lambda t: t.values[0]` for the first objective value."
             )
 
-        distributions = _get_distributions(study, params)
-        if len(distributions) == 0:
-            return OrderedDict()
+        distributions = _get_distributions(study, params=params)
+        if params is None:
+            params = list(distributions.keys())
+        assert params is not None
+        if len(params) == 0:
+            return {}
 
-        trials = []
-        for trial in _filter_nonfinite(
-            study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target
-        ):
-            if any(name not in trial.params for name in distributions.keys()):
-                continue
-            trials.append(trial)
-
+        trials: List[FrozenTrial] = _get_filtered_trials(study, params=params, target=target)
         trans = _SearchSpaceTransform(distributions, transform_log=False, transform_step=False)
-
-        n_trials = len(trials)
-        self._trans_params = numpy.empty((n_trials, trans.bounds.shape[0]), dtype=numpy.float64)
-        self._trans_values = numpy.empty(n_trials, dtype=numpy.float64)
-
-        for trial_idx, trial in enumerate(trials):
-            self._trans_params[trial_idx] = trans.transform(trial.params)
-            self._trans_values[trial_idx] = trial.value if target is None else target(trial)
-
-        encoded_column_to_column = trans.encoded_column_to_column
-
-        if self._trans_params.size == 0:  # `params` were given but as an empty list.
-            return OrderedDict()
+        trans_params: numpy.ndarray = _get_trans_params(trials, trans)
+        target_values: numpy.ndarray = _get_target_values(trials, target)
 
         forest = self._forest
-        forest.fit(self._trans_params, self._trans_values)
+        forest.fit(X=trans_params, y=target_values)
         feature_importances = forest.feature_importances_
-        feature_importances_reduced = numpy.zeros(len(distributions))
-        numpy.add.at(feature_importances_reduced, encoded_column_to_column, feature_importances)
 
-        param_importances = OrderedDict()
-        self._param_names = list(distributions.keys())
-        for i in feature_importances_reduced.argsort()[::-1]:
-            param_importances[self._param_names[i]] = feature_importances_reduced[i].item()
+        # Untransform feature importances to param importances
+        # by adding up relevant feature importances.
+        param_importances = numpy.zeros(len(params))
+        numpy.add.at(param_importances, trans.encoded_column_to_column, feature_importances)
 
-        return param_importances
+        return _sort_dict_by_importance(_param_importances_to_dict(params, param_importances))

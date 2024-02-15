@@ -3,23 +3,26 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import overload
 from typing import Sequence
 from typing import Union
 
 from optuna import multi_objective
+from optuna._convert_positional_args import convert_positional_args
 from optuna._deprecated import deprecated_class
 from optuna.distributions import BaseDistribution
 from optuna.study._study_direction import StudyDirection
 from optuna.trial import FrozenTrial
 from optuna.trial import Trial
 from optuna.trial import TrialState
+from optuna.trial._base import _SUGGEST_INT_POSITIONAL_ARGS
 
 
 CategoricalChoiceType = Union[None, bool, int, float, str]
 
 
 @deprecated_class("2.4.0", "4.0.0")
-class MultiObjectiveTrial(object):
+class MultiObjectiveTrial:
     """A trial is a process of evaluating an objective function.
 
     This object is passed to an objective function and provides interfaces to get parameter
@@ -86,7 +89,10 @@ class MultiObjectiveTrial(object):
 
         return self._trial.suggest_discrete_uniform(name, low, high, q)
 
-    def suggest_int(self, name: str, low: int, high: int, step: int = 1, log: bool = False) -> int:
+    @convert_positional_args(previous_positional_arg_names=_SUGGEST_INT_POSITIONAL_ARGS)
+    def suggest_int(
+        self, name: str, low: int, high: int, *, step: int = 1, log: bool = False
+    ) -> int:
         """Suggest a value for the integer parameter.
 
         Please refer to the documentation of :func:`optuna.trial.Trial.suggest_int`
@@ -94,6 +100,32 @@ class MultiObjectiveTrial(object):
         """
 
         return self._trial.suggest_int(name, low, high, step=step, log=log)
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str:
+        ...
+
+    @overload
+    def suggest_categorical(
+        self, name: str, choices: Sequence[CategoricalChoiceType]
+    ) -> CategoricalChoiceType:
+        ...
 
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
@@ -169,7 +201,7 @@ class MultiObjectiveTrial(object):
         for further details.
         """
 
-        self._trial.set_system_attr(key, value)
+        self._trial.storage.set_trial_system_attr(self._trial._trial_id, key, value)
 
     @property
     def number(self) -> int:
@@ -237,7 +269,7 @@ class MultiObjectiveTrial(object):
 
 
 @deprecated_class("2.4.0", "4.0.0")
-class FrozenMultiObjectiveTrial(object):
+class FrozenMultiObjectiveTrial:
     """Status and results of a :class:`~optuna.multi_objective.trial.MultiObjectiveTrial`.
 
     Attributes:

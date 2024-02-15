@@ -1,24 +1,42 @@
-from typing import cast
+from typing import Any
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
 from unittest.mock import patch
 import warnings
 
+from packaging import version
 import pytest
-import torch
 
 import optuna
 from optuna import integration
+from optuna._imports import try_import
 from optuna.integration import BoTorchSampler
 from optuna.samplers import RandomSampler
+from optuna.samplers._base import _CONSTRAINTS_KEY
 from optuna.storages import RDBStorage
 from optuna.trial import FrozenTrial
 from optuna.trial import Trial
+from optuna.trial import TrialState
+
+
+with try_import() as _imports:
+    import botorch
+    import torch
+
+if not _imports.is_successful():
+    from unittest.mock import MagicMock
+
+    torch = MagicMock()  # NOQA
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.mark.parametrize("n_objectives", [1, 2, 4])
 def test_botorch_candidates_func_none(n_objectives: int) -> None:
+    if n_objectives == 1 and version.parse(botorch.version.version) < version.parse("0.8.1"):
+        pytest.skip("botorch >=0.8.1 is required for logei_candidates_func.")
+
     n_trials = 3
     n_startup_trials = 2
 
@@ -33,11 +51,11 @@ def test_botorch_candidates_func_none(n_objectives: int) -> None:
 
     # TODO(hvy): Do not check for the correct candidates function using private APIs.
     if n_objectives == 1:
-        assert sampler._candidates_func is integration.botorch.qei_candidates_func
+        assert sampler._candidates_func is integration.botorch.logei_candidates_func
     elif n_objectives == 2:
         assert sampler._candidates_func is integration.botorch.qehvi_candidates_func
     elif n_objectives == 4:
-        assert sampler._candidates_func is integration.botorch.qparego_candidates_func
+        assert sampler._candidates_func is integration.botorch.ehvi_candidates_func
     else:
         assert False, "Should not reach."
 
@@ -50,6 +68,7 @@ def test_botorch_candidates_func() -> None:
         train_obj: torch.Tensor,
         train_con: Optional[torch.Tensor],
         bounds: torch.Tensor,
+        running_x: Optional[torch.Tensor],
     ) -> torch.Tensor:
         assert train_con is None
 
@@ -72,22 +91,82 @@ def test_botorch_candidates_func() -> None:
     assert candidates_func_call_count == n_trials - n_startup_trials
 
 
-def test_botorch_candidates_func_invalid_type() -> None:
-    def candidates_func(
-        train_x: torch.Tensor,
-        train_obj: torch.Tensor,
-        train_con: Optional[torch.Tensor],
-        bounds: torch.Tensor,
-    ) -> torch.Tensor:
-        # Must be a `torch.Tensor`, not a list.
-        return torch.rand(1).tolist()  # type: ignore
+@pytest.mark.parametrize(
+    "candidates_func, n_objectives",
+    [
+        (integration.botorch.ehvi_candidates_func, 4),
+        (integration.botorch.ehvi_candidates_func, 5),  # alpha > 0
+        (integration.botorch.logei_candidates_func, 1),
+        (integration.botorch.qei_candidates_func, 1),
+        (integration.botorch.qnei_candidates_func, 1),
+        (integration.botorch.qehvi_candidates_func, 2),
+        (integration.botorch.qehvi_candidates_func, 7),  # alpha > 0
+        (integration.botorch.qparego_candidates_func, 4),
+        (integration.botorch.qnehvi_candidates_func, 2),
+        (integration.botorch.qnehvi_candidates_func, 6),  # alpha > 0
+    ],
+)
+def test_botorch_specify_candidates_func(candidates_func: Any, n_objectives: int) -> None:
+    if candidates_func == integration.botorch.logei_candidates_func and version.parse(
+        botorch.version.version
+    ) < version.parse("0.8.1"):
+        pytest.skip("LogExpectedImprovement is not available in botorch <0.8.1.")
 
-    sampler = BoTorchSampler(candidates_func=candidates_func, n_startup_trials=1)
+    n_trials = 4
+    n_startup_trials = 2
 
-    study = optuna.create_study(direction="minimize", sampler=sampler)
+    sampler = BoTorchSampler(
+        candidates_func=candidates_func,
+        n_startup_trials=n_startup_trials,
+    )
 
-    with pytest.raises(TypeError):
-        study.optimize(lambda t: t.suggest_float("x0", 0, 1), n_trials=3)
+    study = optuna.create_study(directions=["minimize"] * n_objectives, sampler=sampler)
+    study.optimize(
+        lambda t: [t.suggest_float(f"x{i}", 0, 1) for i in range(n_objectives)], n_trials=n_trials
+    )
+
+    assert len(study.trials) == n_trials
+
+
+@pytest.mark.parametrize(
+    "candidates_func, n_objectives",
+    [
+        (integration.botorch.logei_candidates_func, 1),
+        (integration.botorch.qei_candidates_func, 1),
+        (integration.botorch.qehvi_candidates_func, 2),
+        (integration.botorch.qparego_candidates_func, 4),
+        (integration.botorch.qnehvi_candidates_func, 2),
+        (integration.botorch.qnehvi_candidates_func, 3),  # alpha > 0
+    ],
+)
+def test_botorch_specify_candidates_func_constrained(
+    candidates_func: Any, n_objectives: int
+) -> None:
+    n_trials = 4
+    n_startup_trials = 2
+    constraints_func_call_count = 0
+
+    def constraints_func(trial: FrozenTrial) -> Sequence[float]:
+        xs = sum(trial.params[f"x{i}"] for i in range(n_objectives))
+
+        nonlocal constraints_func_call_count
+        constraints_func_call_count += 1
+
+        return (xs - 0.5,)
+
+    sampler = BoTorchSampler(
+        constraints_func=constraints_func,
+        candidates_func=candidates_func,
+        n_startup_trials=n_startup_trials,
+    )
+
+    study = optuna.create_study(directions=["minimize"] * n_objectives, sampler=sampler)
+    study.optimize(
+        lambda t: [t.suggest_float(f"x{i}", 0, 1) for i in range(n_objectives)], n_trials=n_trials
+    )
+
+    assert len(study.trials) == n_trials
+    assert constraints_func_call_count == n_trials
 
 
 def test_botorch_candidates_func_invalid_batch_size() -> None:
@@ -96,6 +175,7 @@ def test_botorch_candidates_func_invalid_batch_size() -> None:
         train_obj: torch.Tensor,
         train_con: Optional[torch.Tensor],
         bounds: torch.Tensor,
+        running_x: Optional[torch.Tensor],
     ) -> torch.Tensor:
         return torch.rand(2, 1)  # Must have the batch size one, not two.
 
@@ -113,6 +193,7 @@ def test_botorch_candidates_func_invalid_dimensionality() -> None:
         train_obj: torch.Tensor,
         train_con: Optional[torch.Tensor],
         bounds: torch.Tensor,
+        running_x: Optional[torch.Tensor],
     ) -> torch.Tensor:
         return torch.rand(1, 1, 1)  # Must have one or two dimensions, not three.
 
@@ -132,6 +213,7 @@ def test_botorch_candidates_func_invalid_candidates_size() -> None:
         train_obj: torch.Tensor,
         train_con: Optional[torch.Tensor],
         bounds: torch.Tensor,
+        running_x: Optional[torch.Tensor],
     ) -> torch.Tensor:
         return torch.rand(n_params - 1)  # Must return candidates for all parameters.
 
@@ -143,45 +225,6 @@ def test_botorch_candidates_func_invalid_candidates_size() -> None:
         study.optimize(
             lambda t: sum(t.suggest_float(f"x{i}", 0, 1) for i in range(n_params)), n_trials=3
         )
-
-
-@pytest.mark.parametrize("n_objectives", [1, 2, 4])
-def test_botorch_constraints_func_none(n_objectives: int) -> None:
-    constraints_func_call_count = 0
-
-    def constraints_func(trial: FrozenTrial) -> Sequence[float]:
-        xs = sum(trial.params[f"x{i}"] for i in range(n_objectives))
-
-        nonlocal constraints_func_call_count
-        constraints_func_call_count += 1
-
-        return (xs - 0.5,)
-
-    n_trials = 4
-    n_startup_trials = 2
-
-    sampler = BoTorchSampler(constraints_func=constraints_func, n_startup_trials=n_startup_trials)
-
-    study = optuna.create_study(directions=["minimize"] * n_objectives, sampler=sampler)
-    study.optimize(
-        lambda t: [t.suggest_float(f"x{i}", 0, 1) for i in range(n_objectives)], n_trials=n_trials
-    )
-
-    assert len(study.trials) == n_trials
-    assert constraints_func_call_count == n_trials
-
-
-def test_botorch_constraints_func_invalid_type() -> None:
-    def constraints_func(trial: FrozenTrial) -> Sequence[float]:
-        x0 = trial.params["x0"]
-        return x0 - 0.5  # Not a tuple, but it should be.
-
-    sampler = BoTorchSampler(constraints_func=constraints_func)
-
-    study = optuna.create_study(direction="minimize", sampler=sampler)
-
-    with pytest.raises(TypeError):
-        study.optimize(lambda t: t.suggest_float("x0", 0, 1), n_trials=3)
 
 
 def test_botorch_constraints_func_invalid_inconsistent_n_constraints() -> None:
@@ -213,7 +256,7 @@ def test_botorch_constraints_func_raises() -> None:
     assert len(study.trials) == 2
 
     for trial in study.trials:
-        sys_con = trial.system_attrs["botorch:constraints"]
+        sys_con = trial.system_attrs[_CONSTRAINTS_KEY]
 
         expected_sys_con: Optional[Tuple[int]]
 
@@ -240,6 +283,7 @@ def test_botorch_constraints_func_nan_warning() -> None:
         train_obj: torch.Tensor,
         train_con: Optional[torch.Tensor],
         bounds: torch.Tensor,
+        running_x: Optional[torch.Tensor],
     ) -> torch.Tensor:
         trial_number = train_x.size(0)
 
@@ -290,6 +334,7 @@ def test_botorch_constraints_func_none_warning() -> None:
         train_obj: torch.Tensor,
         train_con: Optional[torch.Tensor],
         bounds: torch.Tensor,
+        running_x: Optional[torch.Tensor],
     ) -> torch.Tensor:
         # `train_con` should be `None` if `constraints_func` always fails.
         assert train_con is None
@@ -332,6 +377,7 @@ def test_botorch_constraints_func_late() -> None:
         train_obj: torch.Tensor,
         train_con: Optional[torch.Tensor],
         bounds: torch.Tensor,
+        running_x: Optional[torch.Tensor],
     ) -> torch.Tensor:
         trial_number = train_x.size(0)
 
@@ -400,7 +446,7 @@ def test_botorch_distributions() -> None:
         x3 = trial.suggest_int("x3", 0, 2)
         x4 = trial.suggest_int("x4", 2, 4, log=True)
         x5 = trial.suggest_int("x5", 0, 4, step=2)
-        x6 = cast(float, trial.suggest_categorical("x6", [0.1, 0.2, 0.3]))
+        x6 = trial.suggest_categorical("x6", [0.1, 0.2, 0.3])
         return x0 + x1 + x2 + x3 + x4 + x5 + x6
 
     sampler = BoTorchSampler()
@@ -440,3 +486,74 @@ def test_call_after_trial_of_independent_sampler() -> None:
     ) as mock_object:
         study.optimize(lambda _: 1.0, n_trials=1)
         assert mock_object.call_count == 1
+
+
+@pytest.mark.parametrize("device", [None, torch.device("cpu"), torch.device("cuda:0")])
+def test_device_argument(device: Optional[torch.device]) -> None:
+    sampler = BoTorchSampler(device=device)
+    if not torch.cuda.is_available() and sampler._device.type == "cuda":
+        pytest.skip(reason="GPU is unavailable.")
+
+    def objective(trial: Trial) -> float:
+        return trial.suggest_float("x", 0.0, 1.0)
+
+    def constraints_func(trial: FrozenTrial) -> Sequence[float]:
+        x0 = trial.params["x"]
+        return [x0 - 0.5]
+
+    sampler = BoTorchSampler(constraints_func=constraints_func, n_startup_trials=1)
+    study = optuna.create_study(sampler=sampler)
+    study.optimize(objective, n_trials=3)
+
+
+@pytest.mark.parametrize(
+    "candidates_func, n_objectives",
+    [
+        (integration.botorch.qei_candidates_func, 1),
+        (integration.botorch.qehvi_candidates_func, 2),
+        (integration.botorch.qparego_candidates_func, 4),
+        (integration.botorch.qnehvi_candidates_func, 2),
+        (integration.botorch.qnehvi_candidates_func, 3),  # alpha > 0
+    ],
+)
+def test_botorch_consider_running_trials(candidates_func: Any, n_objectives: int) -> None:
+    sampler = BoTorchSampler(
+        candidates_func=candidates_func,
+        n_startup_trials=1,
+        consider_running_trials=True,
+    )
+
+    def objective(trial: Trial) -> Sequence[float]:
+        ret = []
+        for i in range(n_objectives):
+            val = sum(trial.suggest_float(f"x{i}_{j}", 0, 1) for j in range(2))
+            ret.append(val)
+        return ret
+
+    study = optuna.create_study(directions=["minimize"] * n_objectives, sampler=sampler)
+    study.optimize(objective, n_trials=2)
+    assert len(study.trials) == 2
+
+    # fully suggested running trial
+    running_trial_full = study.ask()
+    _ = objective(running_trial_full)
+    study.optimize(objective, n_trials=1)
+    assert len(study.trials) == 4
+    assert sum(t.state == TrialState.RUNNING for t in study.trials) == 1
+    assert sum(t.state == TrialState.COMPLETE for t in study.trials) == 3
+
+    # partially suggested running trial
+    running_trial_partial = study.ask()
+    for i in range(n_objectives):
+        running_trial_partial.suggest_float(f"x{i}_0", 0, 1)
+    study.optimize(objective, n_trials=1)
+    assert len(study.trials) == 6
+    assert sum(t.state == TrialState.RUNNING for t in study.trials) == 2
+    assert sum(t.state == TrialState.COMPLETE for t in study.trials) == 4
+
+    # not suggested running trial
+    _ = study.ask()
+    study.optimize(objective, n_trials=1)
+    assert len(study.trials) == 8
+    assert sum(t.state == TrialState.RUNNING for t in study.trials) == 3
+    assert sum(t.state == TrialState.COMPLETE for t in study.trials) == 5

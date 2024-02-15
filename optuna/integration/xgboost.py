@@ -11,7 +11,9 @@ with optuna._imports.try_import() as _imports:
     xgboost_version = xgb.__version__.split(".")
     xgboost_major_version = int(xgboost_version[0])
     xgboost_minor_version = int(xgboost_version[1])
-    use_callback_cls = xgboost_major_version >= 1 and xgboost_minor_version >= 3
+    use_callback_cls = (
+        xgboost_major_version >= 1 and xgboost_minor_version >= 3
+    ) or xgboost_major_version >= 2
 
 _doc = """Callback for XGBoost to prune unpromising trials.
 
@@ -35,7 +37,7 @@ _doc = """Callback for XGBoost to prune unpromising trials.
 
 if _imports.is_successful() and use_callback_cls:
 
-    class XGBoostPruningCallback(xgb.callback.TrainingCallback):  # type: ignore
+    class XGBoostPruningCallback(xgb.callback.TrainingCallback):
         __doc__ = _doc
 
         def __init__(self, trial: optuna.trial.Trial, observation_key: str, raise_type=None) -> None:
@@ -61,7 +63,7 @@ if _imports.is_successful() and use_callback_cls:
                     assert isinstance(scores, list), scores
                     key = dataset + "-" + metric
                     if self._is_cv:
-                        # Remove stddev of the metric across the cross-valdation
+                        # Remove stddev of the metric across the cross-validation
                         # folds.
                         evaluation_results[key] = scores[-1][0]
                     else:
@@ -86,7 +88,7 @@ if _imports.is_successful() and use_callback_cls:
 
 elif _imports.is_successful():
 
-    def _get_callback_context(env: "xgb.core.CallbackEnv") -> str:
+    def _get_callback_context(env: "xgb.core.CallbackEnv") -> str:  # type: ignore
         """Return whether the current callback context is cv or train.
 
         .. note::
@@ -108,13 +110,12 @@ elif _imports.is_successful():
             self._observation_key = observation_key
             self._raise_type = raise_type
 
-        def __call__(self, env: "xgb.core.CallbackEnv") -> None:
-
+        def __call__(self, env: "xgb.core.CallbackEnv") -> None:  # type: ignore
             context = _get_callback_context(env)
             evaluation_result_list = env.evaluation_result_list
             if context == "cv":
                 # Remove a third element: the stddev of the metric across the
-                # cross-valdation folds.
+                # cross-validation folds.
                 evaluation_result_list = [
                     (key, metric) for key, metric, _ in evaluation_result_list
                 ]

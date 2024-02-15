@@ -1,6 +1,6 @@
+from __future__ import annotations
+
 from typing import Callable
-from typing import List
-from typing import Optional
 from typing import Sequence
 
 from optuna._experimental import experimental_func
@@ -20,11 +20,11 @@ if _imports.is_successful():
 def plot_pareto_front(
     study: Study,
     *,
-    target_names: Optional[List[str]] = None,
+    target_names: list[str] | None = None,
     include_dominated_trials: bool = True,
-    axis_order: Optional[List[int]] = None,
-    constraints_func: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
-    targets: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
+    axis_order: list[int] | None = None,
+    constraints_func: Callable[[FrozenTrial], Sequence[float]] | None = None,
+    targets: Callable[[FrozenTrial], Sequence[float]] | None = None,
 ) -> "Axes":
     """Plot the Pareto front of a study.
 
@@ -79,7 +79,7 @@ def plot_pareto_front(
             be a sequence of :obj:`float` s. A value strictly larger than 0 means that a
             constraint is violated. A value equal to or smaller than 0 is considered feasible.
             This specification is the same as in, for example,
-            :class:`~optuna.integration.NSGAIISampler`.
+            :class:`~optuna.samplers.NSGAIISampler`.
 
             If given, trials are classified into three categories: feasible and best, feasible but
             non-best, and infeasible. Categories are shown in different colors. Here, whether a
@@ -89,7 +89,7 @@ def plot_pareto_front(
             The argument to this function is :class:`~optuna.trial.FrozenTrial`.
             ``targets`` must be :obj:`None` or return 2 or 3 values.
             ``axis_order`` and ``targets`` cannot be used at the same time.
-            If ``study.n_objectives`` is neither 2 nor 3, ``targets`` must be specified.
+            If the number of objectives is neither 2 nor 3, ``targets`` must be specified.
 
             .. note::
                 Added in v3.0.0 as an experimental feature. The interface may change in newer
@@ -105,7 +105,10 @@ def plot_pareto_front(
     info = _get_pareto_front_info(
         study, target_names, include_dominated_trials, axis_order, constraints_func, targets
     )
+    return _get_pareto_front_plot(info)
 
+
+def _get_pareto_front_plot(info: _ParetoFrontInfo) -> "Axes":
     if info.n_targets == 2:
         return _get_pareto_front_2d(info)
     elif info.n_targets == 3:
@@ -125,10 +128,7 @@ def _get_pareto_front_2d(info: _ParetoFrontInfo) -> "Axes":
     ax.set_ylabel(info.target_names[info.axis_order[1]])
 
     trial_label: str = "Trial"
-    if (
-        info.infeasible_trials_with_values is not None
-        and len(info.infeasible_trials_with_values) > 0
-    ):
+    if len(info.infeasible_trials_with_values) > 0:
         ax.scatter(
             x=[values[info.axis_order[0]] for _, values in info.infeasible_trials_with_values],
             y=[values[info.axis_order[1]] for _, values in info.infeasible_trials_with_values],
@@ -136,14 +136,14 @@ def _get_pareto_front_2d(info: _ParetoFrontInfo) -> "Axes":
             label="Infeasible Trial",
         )
         trial_label = "Feasible Trial"
-    if info.non_best_trials_with_values is not None and len(info.non_best_trials_with_values) > 0:
+    if len(info.non_best_trials_with_values) > 0:
         ax.scatter(
             x=[values[info.axis_order[0]] for _, values in info.non_best_trials_with_values],
             y=[values[info.axis_order[1]] for _, values in info.non_best_trials_with_values],
             color=cmap(0),
             label=trial_label,
         )
-    if info.best_trials_with_values is not None and len(info.best_trials_with_values) > 0:
+    if len(info.best_trials_with_values) > 0:
         ax.scatter(
             x=[values[info.axis_order[0]] for _, values in info.best_trials_with_values],
             y=[values[info.axis_order[1]] for _, values in info.best_trials_with_values],

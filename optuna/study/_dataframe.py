@@ -1,10 +1,9 @@
+from __future__ import annotations
+
 import collections
 from typing import Any
 from typing import DefaultDict
-from typing import Dict
-from typing import List
 from typing import Set
-from typing import Tuple
 
 import optuna
 from optuna._imports import try_import
@@ -17,14 +16,15 @@ with try_import() as _imports:
 
 # Required for type annotation in `Study.trials_dataframe`.
 if not _imports.is_successful():
-    pd = object  # type: ignore # NOQA
+    pd = object  # NOQA
+
+__all__ = ["pd"]
 
 
 def _create_records_and_aggregate_column(
-    study: "optuna.Study", attrs: Tuple[str, ...]
-) -> Tuple[List[Dict[Tuple[str, str], Any]], List[Tuple[str, str]]]:
-
-    attrs_to_df_columns: Dict[str, str] = collections.OrderedDict()
+    study: "optuna.Study", attrs: tuple[str, ...]
+) -> tuple[list[dict[tuple[str, str], Any]], list[tuple[str, str]]]:
+    attrs_to_df_columns: dict[str, str] = {}
     for attr in attrs:
         if attr.startswith("_"):
             # Python conventional underscores are omitted in the dataframe.
@@ -39,6 +39,8 @@ def _create_records_and_aggregate_column(
     column_agg: DefaultDict[str, Set] = collections.defaultdict(set)
     non_nested_attr = ""
 
+    metric_names = study.metric_names
+
     records = []
     for trial in study.get_trials(deepcopy=False):
         record = {}
@@ -50,38 +52,47 @@ def _create_records_and_aggregate_column(
                 for nested_attr, nested_value in value.items():
                     record[(df_column, nested_attr)] = nested_value
                     column_agg[attr].add((df_column, nested_attr))
-            elif isinstance(value, list):
+            elif attr == "values":
                 # Expand trial.values.
+                # trial.values should be None when the trial's state is FAIL or PRUNED.
+                trial_values = [None] * len(study.directions) if value is None else value
+                iterator = (
+                    enumerate(trial_values)
+                    if metric_names is None
+                    else zip(metric_names, trial_values)
+                )
+                for nested_attr, nested_value in iterator:
+                    record[(df_column, nested_attr)] = nested_value
+                    column_agg[attr].add((df_column, nested_attr))
+            elif isinstance(value, list):
                 for nested_attr, nested_value in enumerate(value):
                     record[(df_column, nested_attr)] = nested_value
                     column_agg[attr].add((df_column, nested_attr))
-            elif attr == "values":
-                # trial.values should be None when the trial's state is FAIL or PRUNED.
-                assert value is None
-                for nested_attr in range(len(study.directions)):
-                    record[(df_column, nested_attr)] = None
-                    column_agg[attr].add((df_column, nested_attr))
+            elif attr == "value":
+                nested_attr = non_nested_attr if metric_names is None else metric_names[0]
+                record[(df_column, nested_attr)] = value
+                column_agg[attr].add((df_column, nested_attr))
             else:
                 record[(df_column, non_nested_attr)] = value
                 column_agg[attr].add((df_column, non_nested_attr))
 
         records.append(record)
 
-    columns: List[Tuple[str, str]] = sum(
+    columns: list[tuple[str, str]] = sum(
         (sorted(column_agg[k]) for k in attrs if k in column_agg), []
     )
 
     return records, columns
 
 
-def _flatten_columns(columns: List[Tuple[str, str]]) -> List[str]:
+def _flatten_columns(columns: list[tuple[str, str]]) -> list[str]:
     # Flatten the `MultiIndex` columns where names are concatenated with underscores.
     # Filtering is required to omit non-nested columns avoiding unwanted trailing underscores.
     return ["_".join(filter(lambda c: c, map(lambda c: str(c), col))) for col in columns]
 
 
 def _trials_dataframe(
-    study: "optuna.Study", attrs: Tuple[str, ...], multi_index: bool
+    study: "optuna.Study", attrs: tuple[str, ...], multi_index: bool
 ) -> "pd.DataFrame":
     _imports.check()
 

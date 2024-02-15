@@ -11,7 +11,7 @@ on:
       - .github/workflows/dockerimage.yml
       - Dockerfile
       - .dockerignore
-      - setup.py
+      - pyproject.toml
       - .github/workflows/dockerimage.yml
 
 concurrency:
@@ -27,19 +27,21 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    # TODO (nzw0301): Remove `exclude` once integration works with Python 3.10.
+    # TODO (nzw0301): Remove `exclude` once integration works with Python 3.11.
     strategy:
       matrix:
-        python_version: ['3.6', '3.7', '3.8', '3.9', '3.10']
+        python_version: ['3.7', '3.8', '3.9', '3.10', '3.11']
         build_type: ['', 'dev']  # "dev" installs all the dependencies including pytest.
         exclude:
-        - python_version: '3.10'
+        - python_version: '3.7'
+          build_type: 'dev'
+        - python_version: '3.11'
           build_type: 'dev'
 
     # This action cannot be executed in the forked repository.
     if: github.repository == 'optuna/optuna'
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set ENV
       run: |
@@ -63,6 +65,13 @@ jobs:
         docker build ${CACHE_FROM} . --build-arg PYTHON_VERSION=${{ matrix.python_version }} --build-arg BUILD_TYPE=${{ matrix.build_type }} --file Dockerfile --tag "${HUB_TAG}"
       env:
         DOCKER_BUILDKIT: 1
+
+    - name: Output installed packages
+      run: |
+        docker run "${HUB_TAG}" sh -c "pip freeze --all"
+    - name: Output dependency tree
+      run: |
+        docker run "${HUB_TAG}" sh -c "pip install pipdeptree && pipdeptree"
 
     - name: Verify the built image
       run: |

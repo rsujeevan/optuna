@@ -1,21 +1,41 @@
 # Benchmark Result Report
 
-* Number of Solvers: {num_solvers}
-* Number of Models: {num_models}
-* Number of Datasets: {num_datasets}
-* Number of Problems: {num_problems}
+* Number of Solvers: {{ report.solvers|length }}
+* Number of Models: {{ report.models|length }}
+* Number of Datasets: {{ report.datasets|length }}
+* Number of Problems: {{ report.problems|length }}
+* Metrics Precedence: {{ report.metric_precedence }}
 
-Final score for each problem is calculated as `100 x (1-loss)`. Solver with highest score in each problem wins. For more details visit [bayesmark docs.](https://bayesmark.readthedocs.io/en/stable/scoring.html)
+Please refer to ["A Strategy for Ranking Optimizers using Multiple Criteria"][Dewancker, Ian, et al., 2016] for the ranking strategy used in this report.
+
+[Dewancker, Ian, et al., 2016]: http://proceedings.mlr.press/v64/dewancker_strategy_2016.pdf
 
 ## Table of Contents
 
-1. [Problem Leaderboards](#problem-leaderboards)
-2. [Datasets](#datasets)
-3. [Models](#models)
+1. [Overall Results](#overall-results)
+2. [Individual Results](#individual-results)
+3. [Datasets](#datasets)
+4. [Models](#models)
 
-## Problem Leaderboards
+## Overall Results
 
-{leaderboards}
+|Solver|Borda|Firsts|
+|:---|---:|---:|
+{% for solver in report.solvers -%}
+|{{ solver }}|{{ report.borda[solver] }}|{{ report.firsts[solver] }}|
+{% endfor %}
+
+## Individual Results
+
+{% for problem in report.problems %}
+### ({{ problem.number }}) Problem: {{ problem.name }}
+
+|Ranking|Solver|{%- for metric in problem.metrics -%}{{ metric.name }} (avg +- std)|{% endfor %}
+|:---|---:|{%- for _ in range(problem.metrics|length) -%}---:|{% endfor %}
+{% for solver in problem.solvers -%}
+|{{ solver.rank }}|{{ solver.name }}|{{ solver.results|join('|') }}|
+{% endfor -%}
+{% endfor %}
 
 ## Datasets
 

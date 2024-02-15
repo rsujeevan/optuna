@@ -25,7 +25,7 @@ First, callable classes can be used for that purpose as follows:
     import optuna
 
 
-    class Objective(object):
+    class Objective:
         def __init__(self, min_x, max_x):
             # Hold this implementation specific arguments as the fields of the class.
             self.min_x = min_x
@@ -174,7 +174,7 @@ For example, you can save SVM models trained in the objective function as follow
 How can I obtain reproducible optimization results?
 ---------------------------------------------------
 
-To make the parameters suggested by Optuna reproducible, you can specify a fixed random seed via ``seed`` argument of :class:`~optuna.samplers.RandomSampler` or :class:`~optuna.samplers.TPESampler` as follows:
+To make the parameters suggested by Optuna reproducible, you can specify a fixed random seed via ``seed`` argument of an instance of :mod:`~optuna.samplers` as follows:
 
 .. code-block:: python
 
@@ -230,9 +230,9 @@ You can also find the failed trials by checking the trial states as follows:
 How are NaNs returned by trials handled?
 ----------------------------------------
 
-Trials that return :obj:`NaN` (``float('nan')``) are treated as failures, but they will not abort studies.
+Trials that return NaN (``float('nan')``) are treated as failures, but they will not abort studies.
 
-Trials which return :obj:`NaN` are shown as follows:
+Trials which return NaN are shown as follows:
 
 .. code-block:: sh
 
@@ -433,7 +433,7 @@ You can verify the transformation by calculating the elements of the Jacobian.
 How can I optimize a model with some constraints?
 -------------------------------------------------
 
-When you want to optimize a model with constraints, you can use the following classes, :class:`~optuna.samplers.NSGAIISampler` or :class:`~optuna.integration.BoTorchSampler`.
+When you want to optimize a model with constraints, you can use the following classes: :class:`~optuna.samplers.TPESampler`, :class:`~optuna.samplers.NSGAIISampler` or :class:`~optuna.integration.BoTorchSampler`.
 The following example is a benchmark of Binh and Korn function, a multi-objective optimization, with constraints using :class:`~optuna.samplers.NSGAIISampler`. This one has two constraints :math:`c_0 = (x-5)^2 + y^2 - 25 \le 0` and :math:`c_1 = -(x - 8)^2 - (y + 3)^2 + 7.7 \le 0` and finds the optimal solution satisfying these constraints.
 
 
@@ -488,7 +488,7 @@ The following example is a benchmark of Binh and Korn function, a multi-objectiv
         )
         print("    Params: {}".format(trial.params))
 
-If you are interested in the exmaple for :class:`~optuna.integration.BoTorchSampler`, please refer to `this sample code <https://github.com/optuna/optuna-examples/blob/main/multi_objective/botorch_simple.py>`_.
+If you are interested in an example for :class:`~optuna.integration.BoTorchSampler`, please refer to `this sample code <https://github.com/optuna/optuna-examples/blob/main/multi_objective/botorch_simple.py>`_.
 
 
 There are two kinds of constrained optimizations, one with soft constraints and the other with hard constraints.
@@ -520,8 +520,7 @@ For more information about 1., see APIReference_.
 2. Multi-processing parallelization with single node
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-This can be achieved by using file-based RDBs (such as SQLite) and client/server RDBs (such as PostgreSQL and MySQL).
-However, if you are in the environment where you can not install an RDB, you can not run multi-processing parallelization with single node. When you really want to do it, please request it as a GitHub issue. If we receive a lot of requests, we may provide a solution for it.
+This can be achieved by using :class:`~optuna.storages.JournalFileStorage` or client/server RDBs (such as PostgreSQL and MySQL).
 
 For more information about 2., see TutorialEasyParallelization_.
 
@@ -534,6 +533,33 @@ This can be achieved by using client/server RDBs (such as PostgreSQL and MySQL).
 However, if you are in the environment where you can not install a client/server RDB, you can not run multi-processing parallelization with multiple nodes.
 
 For more information about 3., see TutorialEasyParallelization_.
+
+.. _sqlite_concurrency:
+
+How can I solve the error that occurs when performing parallel optimization with SQLite3?
+-----------------------------------------------------------------------------------------
+
+We would never recommend SQLite3 for parallel optimization in the following reasons.
+
+- To concurrently evaluate trials enqueued by :func:`~optuna.study.Study.enqueue_trial`, :class:`~optuna.storages.RDBStorage` uses `SELECT ... FOR UPDATE` syntax, which is unsupported in `SQLite3 <https://github.com/sqlalchemy/sqlalchemy/blob/rel_1_4_41/lib/sqlalchemy/dialects/sqlite/base.py#L1265-L1267>`_.
+- As described in `the SQLAlchemy's documentation <https://docs.sqlalchemy.org/en/14/dialects/sqlite.html#sqlite-concurrency>`_,
+  SQLite3 (and pysqlite driver) does not support a high level of concurrency.
+  You may get a "database is locked" error, which occurs when one thread or process has an exclusive lock on a database connection (in reality a file handle) and another thread times out waiting for the lock to be released.
+  You can increase the default `timeout <https://docs.python.org/3/library/sqlite3.html#sqlite3.connect>`_ value like `optuna.storages.RDBStorage("sqlite:///example.db", engine_kwargs={"connect_args": {"timeout": 20.0}})` though.
+- For distributed optimization via NFS, SQLite3 does not work as described at `FAQ section of sqlite.org <https://www.sqlite.org/faq.html#q5>`_.
+
+If you want to use a file-based Optuna storage for these scenarios, please consider using :class:`~optuna.storages.JournalFileStorage` instead.
+
+.. code-block:: python
+
+   import optuna
+   from optuna.storages import JournalStorage, JournalFileStorage
+
+   storage = JournalStorage(JournalFileStorage("optuna-journal.log"))
+   study = optuna.create_study(storage=storage)
+   ...
+
+See `the Medium blog post <https://medium.com/optuna/distributed-optimization-via-nfs-using-optunas-new-operation-based-logging-storage-9815f9c3f932>`_ for details.
 
 .. _heartbeat_monitoring:
 
@@ -589,3 +615,102 @@ will retry failed trials when a new trial starts to evaluate.
     )
 
     study = optuna.create_study(storage=storage)
+
+
+How can I deal with permutation as a parameter?
+-----------------------------------------------
+
+Although it is not straightforward to deal with combinatorial search spaces like permutations with existing API, there exists a convenient technique for handling them. 
+It involves re-parametrization of permutation search space of :math:`n` items as an independent :math:`n`-dimensional integer search space. 
+This technique is based on the concept of `Lehmer code <https://en.wikipedia.org/wiki/Lehmer_code>`_.
+
+A Lehmer code of a sequence is the sequence of integers in the same size, whose :math:`i`-th entry denotes how many inversions the :math:`i`-th entry of the permutation has after itself.
+In other words, the :math:`i`-th entry of the Lehmer code represents the number of entries that are located after and are smaller than the :math:`i`-th entry of the original sequence.
+For instance, the Lehmer code of the permutation :math:`(3, 1, 4, 2, 0)` is :math:`(3, 1, 2, 1, 0)`.
+
+Not only does the Lehmer code provide a unique encoding of permutations into an integer space, but it also has some desirable properties.
+For example, the sum of Lehmer code entries is equal to the minimum number of adjacent transpositions necessary to transform the corresponding permutation into the identity permutation. 
+Additionally, the lexicographical order of the encodings of two permutations is the same as that of the original sequence. 
+Therefore, Lehmer code preserves "closeness" among permutations in some sense, which is important for the optimization algorithm.
+An Optuna implementation example to solve Euclid TSP is as follows:  
+
+.. code-block:: python
+
+    import numpy as np
+
+    import optuna
+
+
+    def decode(lehmer_code: list[int]) -> list[int]:
+        """Decode Lehmer code to permutation.
+
+        This function decodes Lehmer code represented as a list of integers to a permutation.
+        """
+        all_indices = list(range(n))
+        output = []
+        for k in lehmer_code:
+            value = all_indices[k]
+            output.append(value)
+            all_indices.remove(value)
+        return output
+
+
+    # Euclidean coordinates of cities for TSP.
+    city_coordinates = np.array(
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [2.0, 2.0], [-1.0, -1.0]]
+    )
+    n = len(city_coordinates)
+
+
+    def objective(trial: optuna.Trial) -> float:
+        # Suggest a permutation in the Lehmer code representation.
+        lehmer_code = [trial.suggest_int(f"x{i}", 0, n - i - 1) for i in range(n)]
+        permutation = decode(lehmer_code)
+
+        # Calculate the total distance of the suggested path.
+        total_distance = 0.0
+        for i in range(n):
+            total_distance += np.linalg.norm(
+                city_coordinates[permutation[i]] - city_coordinates[np.roll(permutation, 1)[i]]
+            )
+        return total_distance
+
+
+    study = optuna.create_study()
+    study.optimize(objective, n_trials=10)
+    lehmer_code = study.best_params.values()
+    print(decode(lehmer_code))
+
+How can I ignore duplicated samples?
+------------------------------------
+
+Optuna may sometimes suggest parameters evaluated in the past and if you would like to avoid this problem, you can try out the following workaround:
+
+.. code-block:: python
+
+    import optuna
+    from optuna.trial import TrialState
+
+
+    def objective(trial):
+        # Sample parameters.
+        x = trial.suggest_int("x", -5, 5)
+        y = trial.suggest_int("y", -5, 5)
+        # Fetch all the trials to consider.
+        # In this example, we use only completed trials, but users can specify other states
+        # such as TrialState.PRUNED and TrialState.FAIL.
+        states_to_consider = (TrialState.COMPLETE,)
+        trials_to_consider = trial.study.get_trials(deepcopy=False, states=states_to_consider)
+        # Check whether we already evaluated the sampled `(x, y)`.
+        for t in reversed(trials_to_consider):
+            if trial.params == t.params:
+                # Use the existing value as trial duplicated the parameters.
+                return t.value
+
+        # Compute the objective function if the parameters are not duplicated.
+        # We use the 2D sphere function in this example.
+        return x ** 2 + y ** 2
+    
+
+    study = optuna.create_study()
+    study.optimize(objective, n_trials=100)

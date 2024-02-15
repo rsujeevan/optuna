@@ -10,6 +10,9 @@ from optuna import multi_objective
 from optuna.study._study_direction import StudyDirection
 
 
+pytestmark = pytest.mark.filterwarnings("ignore::FutureWarning")
+
+
 def test_population_size() -> None:
     # Set `population_size` to 10.
     sampler = multi_objective.samplers.NSGAIIMultiObjectiveSampler(population_size=10)
@@ -164,9 +167,10 @@ def test_study_system_attr_for_population_cache() -> None:
     def get_cached_entries(
         study: multi_objective.study.MultiObjectiveStudy,
     ) -> List[Tuple[int, List[int]]]:
+        study_system_attrs = study._storage.get_study_system_attrs(study._study_id)
         return [
             v
-            for k, v in study.system_attrs.items()
+            for k, v in study_system_attrs.items()
             if k.startswith(multi_objective.samplers._nsga2._POPULATION_CACHE_KEY_PREFIX)
         ]
 
@@ -189,17 +193,17 @@ def test_study_system_attr_for_population_cache() -> None:
 
 def test_reseed_rng() -> None:
     sampler = multi_objective.samplers.NSGAIIMultiObjectiveSampler(population_size=10)
-    original_random_state = sampler._rng.get_state()
-    original_random_sampler_random_state = sampler._random_sampler._sampler._rng.get_state()
+    original_random_state = sampler._rng.rng.get_state()
+    original_random_sampler_random_state = sampler._random_sampler._sampler._rng.rng.get_state()
 
     with patch.object(
         sampler._random_sampler, "reseed_rng", wraps=sampler._random_sampler.reseed_rng
     ) as mock_object:
         sampler.reseed_rng()
         assert mock_object.call_count == 1
-    assert str(original_random_state) != str(sampler._rng.get_state())
+    assert str(original_random_state) != str(sampler._rng.rng.get_state())
     assert str(original_random_sampler_random_state) != str(
-        sampler._random_sampler._sampler._rng.get_state()
+        sampler._random_sampler._sampler._rng.rng.get_state()
     )
 
 

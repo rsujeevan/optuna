@@ -1,14 +1,21 @@
-from collections import OrderedDict
 import copy
 from typing import Dict
 from typing import Optional
 
 import optuna
+from optuna._deprecated import deprecated_class
+from optuna._deprecated import deprecated_func
 from optuna.distributions import BaseDistribution
 from optuna.study import Study
 
 
-class IntersectionSearchSpace(object):
+@deprecated_class(
+    "3.2.0",
+    "4.0.0",
+    name="optuna.samplers.IntersectionSearchSpace",
+    text="Please use optuna.search_space.IntersectionSearchSpace instead.",
+)
+class IntersectionSearchSpace:
     """A class to calculate the intersection search space of a :class:`~optuna.study.Study`.
 
     Intersection search space contains the intersection of parameter distributions that have been
@@ -43,8 +50,8 @@ class IntersectionSearchSpace(object):
             ordered_dict:
                 A boolean flag determining the return type.
                 If :obj:`False`, the returned object will be a :obj:`dict`.
-                If :obj:`True`, the returned object will be an :obj:`collections.OrderedDict`
-                sorted by keys, i.e. parameter names.
+                If :obj:`True`, the returned object will be a :obj:`dict` sorted by keys, i.e.
+                parameter names.
 
         Returns:
             A dictionary containing the parameter names and parameter's distributions.
@@ -59,45 +66,51 @@ class IntersectionSearchSpace(object):
             if self._study_id != study._study_id:
                 raise ValueError("`IntersectionSearchSpace` cannot handle multiple studies.")
 
-        states_of_interest = [optuna.trial.TrialState.COMPLETE]
+        states_of_interest = [
+            optuna.trial.TrialState.COMPLETE,
+            optuna.trial.TrialState.WAITING,
+            optuna.trial.TrialState.RUNNING,
+        ]
 
         if self._include_pruned:
             states_of_interest.append(optuna.trial.TrialState.PRUNED)
 
-        next_cursor = self._cursor
-        for trial in reversed(study.get_trials(deepcopy=False)):
+        trials = study._get_trials(deepcopy=False, states=states_of_interest, use_cache=False)
+
+        next_cursor = trials[-1].number + 1 if len(trials) > 0 else -1
+        for trial in reversed(trials):
             if self._cursor > trial.number:
                 break
 
             if not trial.state.is_finished():
                 next_cursor = trial.number
-
-            if trial.state not in states_of_interest:
                 continue
 
             if self._search_space is None:
                 self._search_space = copy.copy(trial.distributions)
                 continue
 
-            delete_list = []
-            for param_name, param_distribution in self._search_space.items():
-                if param_name not in trial.distributions:
-                    delete_list.append(param_name)
-                elif trial.distributions[param_name] != param_distribution:
-                    delete_list.append(param_name)
-
-            for param_name in delete_list:
-                del self._search_space[param_name]
+            self._search_space = {
+                name: distribution
+                for name, distribution in self._search_space.items()
+                if trial.distributions.get(name) == distribution
+            }
 
         self._cursor = next_cursor
         search_space = self._search_space or {}
 
         if ordered_dict:
-            search_space = OrderedDict(sorted(search_space.items(), key=lambda x: x[0]))
+            search_space = dict(sorted(search_space.items(), key=lambda x: x[0]))
 
         return copy.deepcopy(search_space)
 
 
+@deprecated_func(
+    "3.2.0",
+    "4.0.0",
+    name="optuna.samplers.intersection_search_space",
+    text="Please use optuna.search_space.intersection_search_space instead.",
+)
 def intersection_search_space(
     study: Study, ordered_dict: bool = False, include_pruned: bool = False
 ) -> Dict[str, BaseDistribution]:
@@ -120,8 +133,8 @@ def intersection_search_space(
         ordered_dict:
             A boolean flag determining the return type.
             If :obj:`False`, the returned object will be a :obj:`dict`.
-            If :obj:`True`, the returned object will be an :obj:`collections.OrderedDict` sorted by
-            keys, i.e. parameter names.
+            If :obj:`True`, the returned object will be a :obj:`dict` sorted by keys, i.e.
+            parameter names.
         include_pruned:
             Whether pruned trials should be included in the search space.
 

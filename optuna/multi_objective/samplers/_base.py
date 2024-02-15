@@ -8,7 +8,7 @@ from optuna.distributions import BaseDistribution
 
 
 @deprecated_class("2.4.0", "4.0.0")
-class BaseMultiObjectiveSampler(object, metaclass=abc.ABCMeta):
+class BaseMultiObjectiveSampler(abc.ABC):
     """Base class for multi-objective samplers.
 
     The abstract methods of this class are the same as ones defined by
@@ -42,7 +42,7 @@ class BaseMultiObjectiveSampler(object, metaclass=abc.ABCMeta):
             A dictionary containing the parameter names and parameter's distributions.
 
         .. seealso::
-            Please refer to :func:`~optuna.samplers.intersection_search_space` as an
+            Please refer to :func:`~optuna.search_space.intersection_search_space` as an
             implementation of
             :func:`~optuna.multi_objective.samplers.BaseMultiObjectiveSampler.infer_relative_search_space`.
         """

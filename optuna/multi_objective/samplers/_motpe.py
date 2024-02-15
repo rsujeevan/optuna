@@ -26,12 +26,37 @@ from optuna.trial import FrozenTrial
 class MOTPEMultiObjectiveSampler(BaseMultiObjectiveSampler):
     """Multi-objective sampler using the MOTPE algorithm.
 
-    This sampler is a multiobjective version of :class:`~optuna.samplers.TPESampler`.
+    This sampler is a multi-objective version of :class:`~optuna.samplers.TPESampler`.
 
-    For further information about MOTPE algorithm, please refer to the following paper:
+    .. note::
+        For `v2.4.0 <https://github.com/optuna/optuna/releases/tag/v2.4.0>`_ or later,
+        :class:`~optuna.multi_objective.samplers.MOTPEMultiObjectiveSampler` is deprecated and
+        :class:`~optuna.samplers.TPESampler` should be used instead. The following code shows how
+        you apply :class:`~optuna.samplers.TPESampler` to a multi-objective task:
+
+        .. testcode::
+
+            import optuna
+
+
+            def objective(trial):
+                x = trial.suggest_float("x", -100, 100)
+                y = trial.suggest_categorical("y", [-1, 0, 1])
+                f1 = x**2 + y
+                f2 = -((x - 2) ** 2 + y)
+                return f1, f2
+
+
+            # We minimize the first objective and maximize the second objective.
+            sampler = optuna.samplers.TPESampler()
+            study = optuna.create_study(directions=["minimize", "maximize"], sampler=sampler)
+            study.optimize(objective, n_trials=100)
+
+    For further information about MOTPE algorithm, please refer to the following papers:
 
     - `Multiobjective tree-structured parzen estimator for computationally expensive optimization
       problems <https://dl.acm.org/doi/abs/10.1145/3377930.3389817>`_
+    - `Multiobjective Tree-Structured Parzen Estimator <https://doi.org/10.1613/jair.1.13188>`_
 
     Args:
         consider_prior:
@@ -110,7 +135,6 @@ class MOTPEMultiObjectiveSampler(BaseMultiObjectiveSampler):
         weights_above: Callable[[int], np.ndarray] = _default_weights_above,
         seed: Optional[int] = None,
     ) -> None:
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ExperimentalWarning)
             self._motpe_sampler = MOTPESampler(
@@ -150,7 +174,6 @@ class MOTPEMultiObjectiveSampler(BaseMultiObjectiveSampler):
         param_name: str,
         param_distribution: BaseDistribution,
     ) -> Any:
-
         return self._motpe_sampler.sample_independent(
             _create_study(study), _create_trial(trial), param_name, param_distribution
         )

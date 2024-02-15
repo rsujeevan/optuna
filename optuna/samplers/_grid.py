@@ -1,5 +1,5 @@
-import collections
 import itertools
+from numbers import Real
 from typing import Any
 from typing import Dict
 from typing import List
@@ -14,6 +14,7 @@ import numpy as np
 from optuna.distributions import BaseDistribution
 from optuna.logging import get_logger
 from optuna.samplers import BaseSampler
+from optuna.samplers._lazy_random_state import LazyRandomState
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
@@ -101,33 +102,24 @@ class GridSampler(BaseSampler):
     def __init__(
         self, search_space: Mapping[str, Sequence[GridValueType]], seed: Optional[int] = None
     ) -> None:
-
         for param_name, param_values in search_space.items():
             for value in param_values:
                 self._check_value(param_name, value)
 
-        self._search_space = collections.OrderedDict()
+        self._search_space = {}
         for param_name, param_values in sorted(search_space.items()):
-            self._search_space[param_name] = param_values
+            self._search_space[param_name] = list(param_values)
 
         self._all_grids = list(itertools.product(*self._search_space.values()))
         self._param_names = sorted(search_space.keys())
         self._n_min_trials = len(self._all_grids)
-        self._rng = np.random.RandomState(seed)
+        self._rng = LazyRandomState(seed)
+        self._rng.rng.shuffle(self._all_grids)
 
     def reseed_rng(self) -> None:
+        self._rng.rng.seed()
 
-        self._rng.seed()
-
-    def infer_relative_search_space(
-        self, study: Study, trial: FrozenTrial
-    ) -> Dict[str, BaseDistribution]:
-
-        return {}
-
-    def sample_relative(
-        self, study: Study, trial: FrozenTrial, search_space: Dict[str, BaseDistribution]
-    ) -> Dict[str, Any]:
+    def before_trial(self, study: Study, trial: FrozenTrial) -> None:
         # Instead of returning param values, GridSampler puts the target grid id as a system attr,
         # and the values are returned from `sample_independent`. This is because the distribution
         # object is hard to get at the beginning of trial, while we need the access to the object
@@ -136,7 +128,14 @@ class GridSampler(BaseSampler):
         # When the trial is created by RetryFailedTrialCallback or enqueue_trial, we should not
         # assign a new grid_id.
         if "grid_id" in trial.system_attrs or "fixed_params" in trial.system_attrs:
-            return {}
+            return
+
+        if 0 <= trial.number and trial.number < self._n_min_trials:
+            study._storage.set_trial_system_attr(
+                trial._trial_id, "search_space", self._search_space
+            )
+            study._storage.set_trial_system_attr(trial._trial_id, "grid_id", trial.number)
+            return
 
         target_grids = self._get_unvisited_grid_ids(study)
 
@@ -156,11 +155,19 @@ class GridSampler(BaseSampler):
 
         # In distributed optimization, multiple workers may simultaneously pick up the same grid.
         # To make the conflict less frequent, the grid is chosen randomly.
-        grid_id = self._rng.choice(target_grids)
+        grid_id = int(self._rng.rng.choice(target_grids))
 
         study._storage.set_trial_system_attr(trial._trial_id, "search_space", self._search_space)
         study._storage.set_trial_system_attr(trial._trial_id, "grid_id", grid_id)
 
+    def infer_relative_search_space(
+        self, study: Study, trial: FrozenTrial
+    ) -> Dict[str, BaseDistribution]:
+        return {}
+
+    def sample_relative(
+        self, study: Study, trial: FrozenTrial, search_space: Dict[str, BaseDistribution]
+    ) -> Dict[str, Any]:
         return {}
 
     def sample_independent(
@@ -170,7 +177,6 @@ class GridSampler(BaseSampler):
         param_name: str,
         param_distribution: BaseDistribution,
     ) -> Any:
-
         if "grid_id" not in trial.system_attrs:
             message = "All parameters must be specified when using GridSampler with enqueue_trial."
             raise ValueError(message)
@@ -211,7 +217,6 @@ class GridSampler(BaseSampler):
 
     @staticmethod
     def _check_value(param_name: str, param_value: Any) -> None:
-
         if param_value is None or isinstance(param_value, (str, int, float, bool)):
             return
 
@@ -223,7 +228,6 @@ class GridSampler(BaseSampler):
         warnings.warn(message)
 
     def _get_unvisited_grid_ids(self, study: Study) -> List[int]:
-
         # List up unvisited grids based on already finished ones.
         visited_grids = []
         running_grids = []
@@ -251,8 +255,13 @@ class GridSampler(BaseSampler):
 
         return list(unvisited_grids)
 
-    def _same_search_space(self, search_space: Mapping[str, Sequence[GridValueType]]) -> bool:
+    @staticmethod
+    def _grid_value_equal(value1: GridValueType, value2: GridValueType) -> bool:
+        value1_is_nan = isinstance(value1, Real) and np.isnan(float(value1))
+        value2_is_nan = isinstance(value2, Real) and np.isnan(float(value2))
+        return (value1 == value2) or (value1_is_nan and value2_is_nan)
 
+    def _same_search_space(self, search_space: Mapping[str, Sequence[GridValueType]]) -> bool:
         if set(search_space.keys()) != set(self._search_space.keys()):
             return False
 
@@ -261,7 +270,7 @@ class GridSampler(BaseSampler):
                 return False
 
             for i, param_value in enumerate(search_space[param_name]):
-                if param_value != self._search_space[param_name][i]:
+                if not self._grid_value_equal(param_value, self._search_space[param_name][i]):
                     return False
 
         return True

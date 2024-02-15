@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 from typing import Any
 from typing import Dict
-from typing import List
 from typing import Union
 
 import numpy as np
@@ -12,7 +13,6 @@ from optuna import pruners
 from optuna import samplers
 from optuna.integration.botorch import BoTorchSampler
 from optuna.integration.cma import PyCmaSampler
-from optuna.integration.skopt import SkoptSampler
 
 
 _SAMPLERS = {
@@ -24,7 +24,6 @@ _SAMPLERS = {
     "QMCSampler": samplers.QMCSampler,
     "BoTorchSampler": BoTorchSampler,
     "PyCmaSampler": PyCmaSampler,
-    "SkoptSampler": SkoptSampler,
 }
 
 _PRUNERS = {
@@ -43,23 +42,21 @@ ApiConfig = Dict[str, Dict[str, str]]
 
 
 class OptunaOptimizer(AbstractOptimizer):
-
     primary_import = "optuna"
 
     def __init__(self, api_config: ApiConfig, **kwargs: Any) -> None:
-
         super().__init__(api_config, **kwargs)
 
         try:
             sampler = _SAMPLERS[kwargs["sampler"]]
-            sampler_kwargs: Dict[str, Any] = kwargs["sampler_kwargs"]
+            sampler_kwargs: dict[str, Any] = kwargs["sampler_kwargs"]
 
         except KeyError:
             raise ValueError("Unknown sampler passed to Optuna optimizer.")
 
         try:
             pruner = _PRUNERS[kwargs["pruner"]]
-            pruner_kwargs: Dict[str, Any] = kwargs["pruner_kwargs"]
+            pruner_kwargs: dict[str, Any] = kwargs["pruner_kwargs"]
 
         except KeyError:
             raise ValueError("Unknown pruner passed to Optuna optimizer.")
@@ -71,10 +68,9 @@ class OptunaOptimizer(AbstractOptimizer):
             sampler=sampler(**sampler_kwargs),
             pruner=pruner(**pruner_kwargs),
         )
-        self.current_trials: Dict[int, int] = dict()
+        self.current_trials: dict[int, int] = dict()
 
     def _suggest(self, trial: optuna.trial.Trial) -> Suggestion:
-
         suggestions: Suggestion = dict()
         for name, config in self.api_config.items():
             low, high = config["range"]
@@ -99,9 +95,8 @@ class OptunaOptimizer(AbstractOptimizer):
 
         return suggestions
 
-    def suggest(self, n_suggestions: int) -> List[Suggestion]:
-
-        suggestions: List[Suggestion] = list()
+    def suggest(self, n_suggestions: int) -> list[Suggestion]:
+        suggestions: list[Suggestion] = list()
         for _ in range(n_suggestions):
             trial = self.study.ask()
             params = self._suggest(trial)
@@ -111,8 +106,7 @@ class OptunaOptimizer(AbstractOptimizer):
 
         return suggestions
 
-    def observe(self, X: List[Suggestion], y: List[float]) -> None:
-
+    def observe(self, X: list[Suggestion], y: list[float]) -> None:
         for params, objective_value in zip(X, y):
             sid = hash(frozenset(params.items()))
             trial = self.current_trials.pop(sid)

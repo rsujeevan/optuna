@@ -23,7 +23,8 @@ class UniformCrossover(BaseCrossover):
     n_parents = 2
 
     def __init__(self, swapping_prob: float = 0.5) -> None:
-
+        if not (0.0 <= swapping_prob <= 1.0):
+            raise ValueError("`swapping_prob` must be a float value within the range [0.0, 1.0].")
         self._swapping_prob = swapping_prob
 
     def crossover(
@@ -33,7 +34,6 @@ class UniformCrossover(BaseCrossover):
         study: Study,
         search_space_bounds: np.ndarray,
     ) -> np.ndarray:
-
         # https://www.researchgate.net/publication/201976488_Uniform_Crossover_in_Genetic_Algorithms
         # Section 1 Introduction
 

@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 import logging
 from typing import Any
-from typing import Optional
+from typing import TYPE_CHECKING
+import warnings
 
 from tqdm.auto import tqdm
 
 from optuna import logging as optuna_logging
-from optuna._experimental import experimental_func
 
 
-_tqdm_handler: Optional["_TqdmLoggingHandler"] = None
+if TYPE_CHECKING:
+    from optuna.study import Study
+
+_tqdm_handler: _TqdmLoggingHandler | None = None
 
 
 # Reference: https://gist.github.com/hvy/8b80c2cedf02b15c24f85d1fa17ebe02
@@ -24,7 +29,7 @@ class _TqdmLoggingHandler(logging.StreamHandler):
             self.handleError(record)
 
 
-class _ProgressBar(object):
+class _ProgressBar:
     """Progress Bar implementation for :func:`~optuna.study.Study.optimize` on the top of `tqdm`.
 
     Args:
@@ -37,8 +42,13 @@ class _ProgressBar(object):
     """
 
     def __init__(
-        self, is_valid: bool, n_trials: Optional[int] = None, timeout: Optional[float] = None
+        self,
+        is_valid: bool,
+        n_trials: int | None = None,
+        timeout: float | None = None,
     ) -> None:
+        if is_valid and n_trials is None and timeout is None:
+            warnings.warn("Progress bar won't be displayed because n_trials and timeout are None.")
 
         self._is_valid = is_valid and (n_trials or timeout) is not None
         self._n_trials = n_trials
@@ -46,44 +56,46 @@ class _ProgressBar(object):
         self._last_elapsed_seconds = 0.0
 
         if self._is_valid:
-            self._init_valid()
+            if self._n_trials is not None:
+                self._progress_bar = tqdm(total=self._n_trials)
+            elif self._timeout is not None:
+                total = tqdm.format_interval(self._timeout)
+                fmt = "{desc} {percentage:3.0f}%|{bar}| {elapsed}/" + total
+                self._progress_bar = tqdm(total=self._timeout, bar_format=fmt)
+            else:
+                assert False
 
-    # TODO(hvy): Remove initialization indirection via this method when the progress bar is no
-    # longer experimental.
-    @experimental_func("1.2.0", name="Progress bar")
-    def _init_valid(self) -> None:
+            global _tqdm_handler
 
-        if self._n_trials is not None:
-            self._progress_bar = tqdm(total=self._n_trials)
+            _tqdm_handler = _TqdmLoggingHandler()
+            _tqdm_handler.setLevel(logging.INFO)
+            _tqdm_handler.setFormatter(optuna_logging.create_default_formatter())
+            optuna_logging.disable_default_handler()
+            optuna_logging._get_library_root_logger().addHandler(_tqdm_handler)
 
-        else:
-            fmt = "{percentage:3.0f}%|{bar}| {elapsed}/{desc}"
-            self._progress_bar = tqdm(total=self._timeout, bar_format=fmt)
-
-            # Using description string instead postfix string
-            # to display formatted timeout, since postfix carries
-            # extra comma space auto-format.
-            # https://github.com/tqdm/tqdm/issues/712
-            total = tqdm.format_interval(self._timeout)
-            self._progress_bar.set_description_str(total)
-
-        global _tqdm_handler
-
-        _tqdm_handler = _TqdmLoggingHandler()
-        _tqdm_handler.setLevel(logging.INFO)
-        _tqdm_handler.setFormatter(optuna_logging.create_default_formatter())
-        optuna_logging.disable_default_handler()
-        optuna_logging._get_library_root_logger().addHandler(_tqdm_handler)
-
-    def update(self, elapsed_seconds: float) -> None:
+    def update(self, elapsed_seconds: float, study: Study) -> None:
         """Update the progress bars if ``is_valid`` is :obj:`True`.
 
         Args:
             elapsed_seconds:
                 The time past since :func:`~optuna.study.Study.optimize` started.
+            study:
+                The current study object.
         """
 
         if self._is_valid:
+            if not study._is_multi_objective():
+                # Not updating the progress bar when there are no complete trial.
+                try:
+                    msg = (
+                        f"Best trial: {study.best_trial.number}. "
+                        f"Best value: {study.best_value:.6g}"
+                    )
+
+                    self._progress_bar.set_description(msg)
+                except ValueError:
+                    pass
+
             if self._n_trials is not None:
                 self._progress_bar.update(1)
                 if self._timeout is not None:

@@ -20,22 +20,22 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup Python3.8
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: 3.8
 
     - name: Setup cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       env:
         cache-name: coverage
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}-v1
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}-v1
         restore-keys: |
-          ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}
+          ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}
 
     - name: Setup environment
       run: |
@@ -52,23 +52,44 @@ jobs:
         optuna --version
 
         pip install --progress-bar off .[test]
-        pip install --progress-bar off .[optional]
+        pip install --progress-bar off .[optional] --extra-index-url https://download.pytorch.org/whl/cpu
         pip install --progress-bar off .[integration] --extra-index-url https://download.pytorch.org/whl/cpu
+
+        echo 'import coverage; coverage.process_startup()' > sitecustomize.py
+
+    - name: Output installed packages
+      run: |
+        pip freeze --all
+    - name: Output dependency tree
+      run: |
+        pip install pipdeptree
+        pipdeptree
+
 
     - name: Tests
       env:
         OMP_NUM_THREADS: 1
+        PYTHONPATH: .  # To invoke sitecutomize.py
+        COVERAGE_PROCESS_START: .coveragerc  # https://coverage.readthedocs.io/en/6.4.1/subprocess.html
+        COVERAGE_COVERAGE: yes  # https://github.com/nedbat/coveragepy/blob/65bf33fc03209ffb01bbbc0d900017614645ee7a/coverage/control.py#L255-L261
       run: |
-        pytest --cov=optuna --cov-report=xml tests -m "not skip_coverage" \
-            --ignore tests/integration_tests/test_pytorch_lightning.py
+        coverage run --source=optuna -m pytest tests -m "not skip_coverage and not slow"
+        coverage combine
+        coverage xml
 
     - name: Multi-node tests
       env:
         OMP_NUM_THREADS: 1
+        PYTHONPATH: .
+        COVERAGE_PROCESS_START: .coveragerc
+        COVERAGE_COVERAGE: yes
       run: |
-        mpirun -n 2 -- pytest --cov=optuna --cov-report=xml --cov-append tests/integration_tests/test_chainermn.py
+        export OMPI_MCA_rmaps_base_oversubscribe=yes
+        mpirun -n 2 -- coverage run -m pytest tests/integration_tests/test_pytorch_distributed.py
+        coverage combine --append
+        coverage xml
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml

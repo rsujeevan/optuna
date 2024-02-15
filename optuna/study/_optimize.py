@@ -7,8 +7,6 @@ import gc
 import itertools
 import os
 import sys
-from threading import Event
-from threading import Thread
 from typing import Any
 from typing import Callable
 from typing import List
@@ -25,7 +23,7 @@ from optuna import exceptions
 from optuna import logging
 from optuna import progress_bar as pbar_module
 from optuna import trial as trial_module
-from optuna.storages._heartbeat import BaseHeartbeat
+from optuna.storages._heartbeat import get_heartbeat_thread
 from optuna.storages._heartbeat import is_heartbeat_enabled
 from optuna.study._tell import _tell_with_warning
 from optuna.study._tell import STUDY_TELL_WARNING_KEY
@@ -52,7 +50,7 @@ def _optimize(
             "The catch argument is of type '{}' but must be a tuple.".format(type(catch).__name__)
         )
 
-    if not study._optimize_lock.acquire(False):
+    if study._thread_local.in_optimize_loop:
         raise RuntimeError("Nested invocation of `Study.optimize` method isn't allowed.")
 
     if show_progress_bar and n_trials is None and timeout is not None and n_jobs != 1:
@@ -120,7 +118,7 @@ def _optimize(
                         )
                     )
     finally:
-        study._optimize_lock.release()
+        study._thread_local.in_optimize_loop = False
         progress_bar.close()
 
 
@@ -136,6 +134,9 @@ def _optimize_sequential(
     time_start: Optional[datetime.datetime],
     progress_bar: Optional[pbar_module._ProgressBar],
 ) -> None:
+    # Here we set `in_optimize_loop = True`, not at the beginning of the `_optimize()` function.
+    # Because it is a thread-local object and `n_jobs` option spawns new threads.
+    study._thread_local.in_optimize_loop = True
     if reseed_sampler_rng:
         study.sampler.reseed_rng()
 
@@ -160,11 +161,9 @@ def _optimize_sequential(
 
         try:
             frozen_trial = _run_trial(study, func, catch)
-        except Exception:
-            raise
         finally:
             # The following line mitigates memory problems that can be occurred in some
-            # environments (e.g., services that use computing containers such as CircleCI).
+            # environments (e.g., services that use computing containers such as GitHub Actions).
             # Please refer to the following PR for further details:
             # https://github.com/optuna/optuna/pull/325.
             if gc_after_trial:
@@ -175,7 +174,8 @@ def _optimize_sequential(
                 callback(study, frozen_trial)
 
         if progress_bar is not None:
-            progress_bar.update((datetime.datetime.now() - time_start).total_seconds())
+            elapsed_seconds = (datetime.datetime.now() - time_start).total_seconds()
+            progress_bar.update(elapsed_seconds, study)
 
     study._storage.remove_session()
 
@@ -194,37 +194,27 @@ def _run_trial(
     value_or_values: Optional[Union[float, Sequence[float]]] = None
     func_err: Optional[Union[Exception, KeyboardInterrupt]] = None
     func_err_fail_exc_info: Optional[Any] = None
-    stop_event: Optional[Event] = None
-    thread: Optional[Thread] = None
 
-    if is_heartbeat_enabled(study._storage):
-        assert isinstance(study._storage, BaseHeartbeat)
-        heartbeat = study._storage
-        stop_event = Event()
-        thread = Thread(target=_record_heartbeat, args=(trial._trial_id, heartbeat, stop_event))
-        thread.start()
-
-    try:
-        value_or_values = func(trial)
-    except exceptions.TrialPruned as e:
-        # TODO(mamu): Handle multi-objective cases.
-        state = TrialState.PRUNED
-        func_err = e
-    except (Exception, KeyboardInterrupt) as e:
-        state = TrialState.FAIL
-        func_err = e
-        func_err_fail_exc_info = sys.exc_info()
-
-    if is_heartbeat_enabled(study._storage):
-        assert stop_event is not None
-        assert thread is not None
-        stop_event.set()
-        thread.join()
+    with get_heartbeat_thread(trial._trial_id, study._storage):
+        try:
+            value_or_values = func(trial)
+        except exceptions.TrialPruned as e:
+            # TODO(mamu): Handle multi-objective cases.
+            state = TrialState.PRUNED
+            func_err = e
+        except (Exception, KeyboardInterrupt) as e:
+            state = TrialState.FAIL
+            func_err = e
+            func_err_fail_exc_info = sys.exc_info()
 
     # `_tell_with_warning` may raise during trial post-processing.
     try:
         frozen_trial = _tell_with_warning(
-            study=study, trial=trial, values=value_or_values, state=state, suppress_warning=True
+            study=study,
+            trial=trial,
+            value_or_values=value_or_values,
+            state=state,
+            suppress_warning=True,
         )
     except Exception:
         frozen_trial = study._storage.get_trial(trial._trial_id)
@@ -236,9 +226,18 @@ def _run_trial(
             _logger.info("Trial {} pruned. {}".format(frozen_trial.number, str(func_err)))
         elif frozen_trial.state == TrialState.FAIL:
             if func_err is not None:
-                _log_failed_trial(frozen_trial, repr(func_err), exc_info=func_err_fail_exc_info)
+                _log_failed_trial(
+                    frozen_trial,
+                    repr(func_err),
+                    exc_info=func_err_fail_exc_info,
+                    value_or_values=value_or_values,
+                )
             elif STUDY_TELL_WARNING_KEY in frozen_trial.system_attrs:
-                _log_failed_trial(frozen_trial, frozen_trial.system_attrs[STUDY_TELL_WARNING_KEY])
+                _log_failed_trial(
+                    frozen_trial,
+                    frozen_trial.system_attrs[STUDY_TELL_WARNING_KEY],
+                    value_or_values=value_or_values,
+                )
             else:
                 assert False, "Should not reach."
         else:
@@ -253,19 +252,17 @@ def _run_trial(
     return frozen_trial
 
 
-def _record_heartbeat(trial_id: int, storage: BaseHeartbeat, stop_event: Event) -> None:
-    heartbeat_interval = storage.get_heartbeat_interval()
-    assert heartbeat_interval is not None
-    while True:
-        storage.record_heartbeat(trial_id)
-        if stop_event.wait(timeout=heartbeat_interval):
-            return
-
-
 def _log_failed_trial(
-    trial: FrozenTrial, message: Union[str, Warning], exc_info: Any = None
+    trial: FrozenTrial,
+    message: Union[str, Warning],
+    exc_info: Any = None,
+    value_or_values: Any = None,
 ) -> None:
     _logger.warning(
-        "Trial {} failed because of the following error: {}".format(trial.number, message),
+        "Trial {} failed with parameters: {} because of the following error: {}.".format(
+            trial.number, trial.params, message
+        ),
         exc_info=exc_info,
     )
+
+    _logger.warning("Trial {} failed with value {}.".format(trial.number, repr(value_or_values)))

@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import sys
 from typing import Any
-from typing import List
 
 from kurobako import problem
 from naslib.utils import get_dataset_api
@@ -30,11 +31,11 @@ class NASLibProblemFactory(problem.ProblemFactory):
         """
         self._dataset = dataset
         if dataset == "cifar10":
-            self._dataset = "cifar10-valid"  # Set name used in dataset API
+            # Set name used in dataset API.
+            self._dataset = "cifar10-valid"
         self._dataset_api = get_dataset_api("nasbench201", dataset)
 
     def specification(self) -> problem.ProblemSpec:
-
         params = [
             problem.Var(f"x{i}", problem.CategoricalRange(op_names)) for i in range(edge_num)
         ]
@@ -55,7 +56,7 @@ class NASLibProblem(problem.Problem):
         self._dataset = dataset
         self._dataset_api = dataset_api
 
-    def create_evaluator(self, params: List[float]) -> problem.Evaluator:
+    def create_evaluator(self, params: list[float]) -> problem.Evaluator:
         ops = [op_names[int(x)] for x in params]
         arch_str = "|{}~0|+|{}~0|{}~1|+|{}~0|{}~1|{}~2|".format(*ops)
         return NASLibEvaluator(
@@ -64,20 +65,19 @@ class NASLibProblem(problem.Problem):
 
 
 class NASLibEvaluator(problem.Evaluator):
-    def __init__(self, learning_curve: List[float]) -> None:
+    def __init__(self, learning_curve: list[float]) -> None:
         self._current_step = 0
         self._lc = learning_curve
 
     def current_step(self) -> int:
         return self._current_step
 
-    def evaluate(self, next_step: int) -> List[float]:
+    def evaluate(self, next_step: int) -> list[float]:
         self._current_step = next_step
         return [-self._lc[next_step]]
 
 
 if __name__ == "__main__":
-
     if len(sys.argv) < 1 + 2:
         print("Usage: python3 nas_bench_suite/problems.py <search_space> <dataset>")
         print("Example: python3 nas_bench_suite/problems.py nasbench201 cifar10")

@@ -9,7 +9,8 @@ from optuna.study import Study
 
 @experimental_class("3.0.0")
 class VSBXCrossover(BaseCrossover):
-    """Modified Simulated Binary Crossover operation used by :class:`~optuna.samplers.NSGAIISampler`.
+    """Modified Simulated Binary Crossover operation used by
+    :class:`~optuna.samplers.NSGAIISampler`.
 
     vSBX generates child individuals without excluding any region of the parameter space,
     while maintaining the excellent properties of SBX.
@@ -29,7 +30,6 @@ class VSBXCrossover(BaseCrossover):
     n_parents = 2
 
     def __init__(self, eta: Optional[float] = None) -> None:
-
         self._eta = eta
 
     def crossover(
@@ -39,7 +39,6 @@ class VSBXCrossover(BaseCrossover):
         study: Study,
         search_space_bounds: np.ndarray,
     ) -> np.ndarray:
-
         # https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.422.952&rep=rep1&type=pdf
         # Section 3.2 Crossover Schemes (vSBX)
         if self._eta is None:

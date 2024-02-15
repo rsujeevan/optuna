@@ -1,44 +1,68 @@
 import logging
-from logging import CRITICAL  # NOQA
-from logging import DEBUG  # NOQA
-from logging import ERROR  # NOQA
-from logging import FATAL  # NOQA
-from logging import INFO  # NOQA
-from logging import WARN  # NOQA
-from logging import WARNING  # NOQA
+from logging import CRITICAL
+from logging import DEBUG
+from logging import ERROR
+from logging import FATAL
+from logging import INFO
+from logging import WARN
+from logging import WARNING
+import os
+import sys
 import threading
 from typing import Optional
 
 import colorlog
 
 
+__all__ = [
+    "CRITICAL",
+    "DEBUG",
+    "ERROR",
+    "FATAL",
+    "INFO",
+    "WARN",
+    "WARNING",
+]
+
 _lock: threading.Lock = threading.Lock()
 _default_handler: Optional[logging.Handler] = None
 
 
-def create_default_formatter() -> colorlog.ColoredFormatter:
+def create_default_formatter() -> logging.Formatter:
     """Create a default formatter of log messages.
 
     This function is not supposed to be directly accessed by library users.
     """
+    header = "[%(levelname)1.1s %(asctime)s]"
+    message = "%(message)s"
+    if _color_supported():
+        return colorlog.ColoredFormatter(
+            f"%(log_color)s{header}%(reset)s {message}",
+        )
+    return logging.Formatter(f"{header} {message}")
 
-    return colorlog.ColoredFormatter(
-        "%(log_color)s[%(levelname)1.1s %(asctime)s]%(reset)s %(message)s"
-    )
+
+def _color_supported() -> bool:
+    """Detection of color support."""
+    # NO_COLOR environment variable:
+    if os.environ.get("NO_COLOR", None):
+        return False
+
+    if not hasattr(sys.stderr, "isatty") or not sys.stderr.isatty():
+        return False
+    else:
+        return True
 
 
 def _get_library_name() -> str:
-
     return __name__.split(".")[0]
 
 
 def _get_library_root_logger() -> logging.Logger:
-
     return logging.getLogger(_get_library_name())
 
 
 def _configure_library_root_logger() -> None:
-
     global _default_handler
 
     with _lock:
@@ -56,7 +80,6 @@ def _configure_library_root_logger() -> None:
 
 
 def _reset_library_root_logger() -> None:
-
     global _default_handler
 
     with _lock:
@@ -239,7 +262,7 @@ def disable_propagation() -> None:
     """Disable propagation of the library log outputs.
 
     Note that log propagation is disabled by default. You only need to use this function
-    to stop log propagation when you use :func:`~optuna.logging.enable_propogation()`.
+    to stop log propagation when you use :func:`~optuna.logging.enable_propagation()`.
 
     Example:
 

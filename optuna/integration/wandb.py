@@ -18,7 +18,7 @@ with try_import() as _imports:
 
 
 @experimental_class("2.9.0")
-class WeightsAndBiasesCallback(object):
+class WeightsAndBiasesCallback:
     """Callback to track Optuna trials with Weights & Biases.
 
     This callback enables tracking of Optuna study in
@@ -113,7 +113,6 @@ class WeightsAndBiasesCallback(object):
         wandb_kwargs: Optional[Dict[str, Any]] = None,
         as_multirun: bool = False,
     ) -> None:
-
         _imports.check()
 
         if not isinstance(metric_name, Sequence):
@@ -131,7 +130,6 @@ class WeightsAndBiasesCallback(object):
             self._initialize_run()
 
     def __call__(self, study: optuna.study.Study, trial: optuna.trial.FrozenTrial) -> None:
-
         if isinstance(self._metric_name, str):
             if len(trial.values) > 1:
                 # Broadcast default name for multi-objective optimization.
@@ -213,13 +211,12 @@ class WeightsAndBiasesCallback(object):
 
 
         Returns:
-            ObjectiveFuncType: Objective function with W&B tracking enabled.
+            Objective function with W&B tracking enabled.
         """
 
         def decorator(func: ObjectiveFuncType) -> ObjectiveFuncType:
             @functools.wraps(func)
             def wrapper(trial: optuna.trial.Trial) -> Union[float, Sequence[float]]:
-
                 run = wandb.run  # Uses global run when `as_multirun` is set to False.
                 if not run:
                     run = self._initialize_run()

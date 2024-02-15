@@ -1,5 +1,3 @@
-from typing import TYPE_CHECKING
-
 from optuna import distributions
 from optuna import exceptions
 from optuna import integration
@@ -7,6 +5,7 @@ from optuna import logging
 from optuna import multi_objective
 from optuna import pruners
 from optuna import samplers
+from optuna import search_space
 from optuna import storages
 from optuna import study
 from optuna import trial
@@ -16,6 +15,7 @@ from optuna.exceptions import TrialPruned
 from optuna.study import copy_study
 from optuna.study import create_study
 from optuna.study import delete_study
+from optuna.study import get_all_study_names
 from optuna.study import get_all_study_summaries
 from optuna.study import load_study
 from optuna.study import Study
@@ -26,16 +26,17 @@ from optuna.version import __version__
 
 __all__ = [
     "Study",
-    "TYPE_CHECKING",
     "Trial",
     "TrialPruned",
     "__version__",
+    "artifacts",
     "copy_study",
     "create_study",
     "create_trial",
     "delete_study",
     "distributions",
     "exceptions",
+    "get_all_study_names",
     "get_all_study_summaries",
     "importance",
     "integration",
@@ -44,6 +45,7 @@ __all__ = [
     "multi_objective",
     "pruners",
     "samplers",
+    "search_space",
     "storages",
     "study",
     "trial",
@@ -52,5 +54,6 @@ __all__ = [
 ]
 
 
+artifacts = _LazyImport("optuna.artifacts")
 importance = _LazyImport("optuna.importance")
 visualization = _LazyImport("optuna.visualization")

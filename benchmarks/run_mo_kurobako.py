@@ -1,8 +1,8 @@
+from __future__ import annotations
+
 import argparse
 import os
 import subprocess
-from typing import Dict
-from typing import Union
 
 
 def run(args: argparse.Namespace) -> None:
@@ -65,8 +65,11 @@ def run(args: argparse.Namespace) -> None:
             f"sampler_list: {sampler_list}, sampler_kwargs_list: {sampler_kwargs_list}."
         )
 
-    for sampler, sampler_kwargs in zip(sampler_list, sampler_kwargs_list):
-        name = f"{args.name_prefix}_{sampler}"
+    for i, (sampler, sampler_kwargs) in enumerate(zip(sampler_list, sampler_kwargs_list)):
+        sampler_name = sampler
+        if sampler_list.count(sampler) > 1:
+            sampler_name += f"_{sampler_list[:i].count(sampler)}"
+        name = f"{args.name_prefix}_{sampler_name}"
         python_command = f"{args.path_to_create_study} {sampler} {sampler_kwargs}"
         cmd = (
             f"{kurobako_cmd} solver --name {name} command python3 {python_command}"
@@ -76,9 +79,9 @@ def run(args: argparse.Namespace) -> None:
 
     # Create study.
     cmd = (
-        f"{kurobako_cmd} studies --budget 120 "
+        f"{kurobako_cmd} studies --budget {args.budget} "
         f"--solvers $(cat {solvers_filename}) --problems $(cat {problems_filename}) "
-        f"--repeats {args.n_runs} --seed {args.seed} "
+        f"--repeats {args.n_runs} --seed {args.seed} --concurrency {args.n_concurrency} "
         f"> {study_json_filename}"
     )
     subprocess.run(cmd, shell=True)
@@ -96,7 +99,7 @@ def run(args: argparse.Namespace) -> None:
     subprocess.run(cmd, shell=True)
 
     # Plot pareto-front.
-    plot_args: Dict[str, Dict[str, Union[int, float]]]
+    plot_args: dict[str, dict[str, int | float]]
     plot_args = {
         "NASBench": {"xmin": 0, "xmax": 25000000, "ymin": 0, "ymax": 0.2},
         "ZDT1": {"xmin": 0, "xmax": 1, "ymin": 1, "ymax": 7},
@@ -134,8 +137,10 @@ if __name__ == "__main__":
         "--path-to-create-study", type=str, default="benchmarks/kurobako/mo_create_study.py"
     )
     parser.add_argument("--name-prefix", type=str, default="")
+    parser.add_argument("--budget", type=int, default=120)
     parser.add_argument("--n-runs", type=int, default=100)
     parser.add_argument("--n-jobs", type=int, default=10)
+    parser.add_argument("--n-concurrency", type=int, default=1)
     parser.add_argument(
         "--sampler-list",
         type=str,

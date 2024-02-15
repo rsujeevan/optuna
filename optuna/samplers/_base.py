@@ -1,8 +1,12 @@
 import abc
 from typing import Any
+from typing import Callable
 from typing import Dict
 from typing import Optional
 from typing import Sequence
+import warnings
+
+import numpy as np
 
 from optuna.distributions import BaseDistribution
 from optuna.study import Study
@@ -10,7 +14,7 @@ from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 
 
-class BaseSampler(object, metaclass=abc.ABCMeta):
+class BaseSampler(abc.ABC):
     """Base class for samplers.
 
     Optuna combines two types of sampling strategies, which are called *relative sampling* and
@@ -27,9 +31,10 @@ class BaseSampler(object, metaclass=abc.ABCMeta):
 
     More specifically, parameters are sampled by the following procedure.
     At the beginning of a trial, :meth:`~optuna.samplers.BaseSampler.infer_relative_search_space`
-    is called to determine the relative search space for the trial. Then,
-    :meth:`~optuna.samplers.BaseSampler.sample_relative` is invoked to sample parameters
-    from the relative search space. During the execution of the objective function,
+    is called to determine the relative search space for the trial.
+    During the execution of the objective function,
+    :meth:`~optuna.samplers.BaseSampler.sample_relative` is called only once
+    when sampling the parameters belonging to the relative search space for the first time.
     :meth:`~optuna.samplers.BaseSampler.sample_independent` is used to sample
     parameters that don't belong to the relative search space.
 
@@ -67,7 +72,7 @@ class BaseSampler(object, metaclass=abc.ABCMeta):
             A dictionary containing the parameter names and parameter's distributions.
 
         .. seealso::
-            Please refer to :func:`~optuna.samplers.intersection_search_space` as an
+            Please refer to :func:`~optuna.search_space.intersection_search_space` as an
             implementation of :func:`~optuna.samplers.BaseSampler.infer_relative_search_space`.
         """
 
@@ -143,6 +148,28 @@ class BaseSampler(object, metaclass=abc.ABCMeta):
 
         raise NotImplementedError
 
+    def before_trial(self, study: Study, trial: FrozenTrial) -> None:
+        """Trial pre-processing.
+
+        This method is called before the objective function is called and right after the trial is
+        instantiated. More precisely, this method is called during trial initialization, just
+        before the :func:`~optuna.samplers.BaseSampler.infer_relative_search_space` call. In other
+        words, it is responsible for pre-processing that should be done before inferring the search
+        space.
+
+        .. note::
+            Added in v3.3.0 as an experimental feature. The interface may change in newer versions
+            without prior notice. See https://github.com/optuna/optuna/releases/tag/v3.3.0.
+
+        Args:
+            study:
+                Target study object.
+            trial:
+                Target trial object.
+        """
+
+        pass
+
     def after_trial(
         self,
         study: Study,
@@ -152,7 +179,7 @@ class BaseSampler(object, metaclass=abc.ABCMeta):
     ) -> None:
         """Trial post-processing.
 
-        This method is called after the objective function returns and right before the trials is
+        This method is called after the objective function returns and right before the trial is
         finished and its state is stored.
 
         .. note::
@@ -187,9 +214,40 @@ class BaseSampler(object, metaclass=abc.ABCMeta):
         pass
 
     def _raise_error_if_multi_objective(self, study: Study) -> None:
-
         if study._is_multi_objective():
             raise ValueError(
                 "If the study is being used for multi-objective optimization, "
                 f"{self.__class__.__name__} cannot be used."
             )
+
+
+_CONSTRAINTS_KEY = "constraints"
+
+
+def _process_constraints_after_trial(
+    constraints_func: Callable[[FrozenTrial], Sequence[float]],
+    study: Study,
+    trial: FrozenTrial,
+    state: TrialState,
+) -> None:
+    if state not in [TrialState.COMPLETE, TrialState.PRUNED]:
+        return
+
+    constraints = None
+    try:
+        con = constraints_func(trial)
+        if np.any(np.isnan(con)):
+            raise ValueError("Constraint values cannot be NaN.")
+        if not isinstance(con, (tuple, list)):
+            warnings.warn(
+                f"Constraints should be a sequence of floats but got {type(con).__name__}."
+            )
+        constraints = tuple(con)
+    finally:
+        assert constraints is None or isinstance(constraints, tuple)
+
+        study._storage.set_trial_system_attr(
+            trial._trial_id,
+            _CONSTRAINTS_KEY,
+            constraints,
+        )

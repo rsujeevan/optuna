@@ -1,8 +1,8 @@
 """
 .. _first:
 
-1. Lightweight, versatile, and platform agnostic architecture
-=============================================================
+Lightweight, versatile, and platform agnostic architecture
+==========================================================
 
 Optuna is entirely written in Python and has few dependencies.
 This means that we can quickly move to the real example once you get interested in Optuna.
@@ -105,7 +105,8 @@ study.best_trial
 # To get all trials:
 
 study.trials
-
+for trial in study.trials[:2]:  # Show first two trials
+    print(trial)
 
 ###################################################################################################
 # To get the number of trials:

@@ -1,6 +1,7 @@
 name: Tests (Storage with server)
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -17,11 +18,21 @@ jobs:
   # RDB. Since current name "tests-rdbstorage" is required in the Branch protection rules, you
   # need to modify the Branch protection rules as well.
   tests-rdbstorage:
+    if: (github.event_name == 'schedule' && github.repository == 'optuna/optuna') || (github.event_name != 'schedule')
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10']
+        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
+        test-trigger-type:
+          - ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'Scheduled' || '' }}
+        exclude:
+          - test-trigger-type: ""
+            python-version: "3.8"
+          - test-trigger-type: ""
+            python-version: "3.9"
+          - test-trigger-type: ""
+            python-version: "3.10"
 
     services:
       mysql:
@@ -52,28 +63,28 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:6.2.6
+        image: redis
         ports:
           - 6379:6379
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup Python${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Setup cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       env:
         cache-name: test-storage-with-server
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}-v1
+        key: ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}-v1
         restore-keys: |
-          ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/setup.py') }}
+          ${{ runner.os }}-${{ matrix.python-version }}-${{ env.cache-name }}-${{ hashFiles('**/pyproject.toml') }}
 
     - name: Setup environment
       run: |
@@ -91,16 +102,25 @@ jobs:
         optuna --version
 
         pip install --progress-bar off .[test]
-        pip install --progress-bar off .[optional]
+        pip install --progress-bar off .[optional] --extra-index-url https://download.pytorch.org/whl/cpu
 
     - name: Install DB bindings
       run: |
         pip install --progress-bar off PyMySQL cryptography psycopg2-binary redis
 
+    - name: Output installed packages
+      run: |
+        pip freeze --all
+    - name: Output dependency tree
+      run: |
+        pip install pipdeptree
+        pipdeptree
+
     - name: Tests MySQL
       run: |
         pytest tests/storages_tests/test_with_server.py
       env:
+        SQLALCHEMY_WARN_20: 1
         OMP_NUM_THREADS: 1
         TEST_DB_URL: mysql+pymysql://user:test@127.0.0.1/optunatest
 
@@ -111,9 +131,10 @@ jobs:
         OMP_NUM_THREADS: 1
         TEST_DB_URL: postgresql+psycopg2://user:test@127.0.0.1/optunatest
 
-    - name: Tests Redis
+    - name: Tests Journal Redis
       run: |
         pytest tests/storages_tests/test_with_server.py
       env:
         OMP_NUM_THREADS: 1
         TEST_DB_URL: redis://localhost:6379
+        TEST_DB_MODE: journal-redis

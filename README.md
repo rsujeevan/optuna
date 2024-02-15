@@ -2,34 +2,23 @@
 
 # Optuna: A hyperparameter optimization framework
 
-[![Python](https://img.shields.io/badge/python-3.6%20%7C%203.7%20%7C%203.8%20%7C%203.9%20%7C%203.10-blue)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org)
 [![pypi](https://img.shields.io/pypi/v/optuna.svg)](https://pypi.python.org/pypi/optuna)
 [![conda](https://img.shields.io/conda/vn/conda-forge/optuna.svg)](https://anaconda.org/conda-forge/optuna)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/optuna/optuna)
-[![CircleCI](https://circleci.com/gh/optuna/optuna.svg?style=svg)](https://circleci.com/gh/optuna/optuna)
 [![Read the Docs](https://readthedocs.org/projects/optuna/badge/?version=stable)](https://optuna.readthedocs.io/en/stable/)
-[![Codecov](https://codecov.io/gh/optuna/optuna/branch/master/graph/badge.svg)](https://codecov.io/gh/optuna/optuna/branch/master)
-[![Gitter chat](https://badges.gitter.im/optuna/gitter.svg)](https://gitter.im/optuna/optuna)
+[![Codecov](https://codecov.io/gh/optuna/optuna/branch/master/graph/badge.svg)](https://codecov.io/gh/optuna/optuna)
 
 [**Website**](https://optuna.org/)
 | [**Docs**](https://optuna.readthedocs.io/en/stable/)
 | [**Install Guide**](https://optuna.readthedocs.io/en/stable/installation.html)
 | [**Tutorial**](https://optuna.readthedocs.io/en/stable/tutorial/index.html)
+| [**Examples**](https://github.com/optuna/optuna-examples)
 
 *Optuna* is an automatic hyperparameter optimization software framework, particularly designed
 for machine learning. It features an imperative, *define-by-run* style user API. Thanks to our
 *define-by-run* API, the code written with Optuna enjoys high modularity, and the user of
 Optuna can dynamically construct the search spaces for the hyperparameters.
-
-## News
-
-- **2022-02-14** Pre-releases of Optuna 3.0 are available! Early adopters may want to upgrade and provide feedback for a smoother transition to the coming full release. You can install a pre-release version by `pip install -U --pre optuna`. Find the latest one [here](https://github.com/optuna/optuna/releases)
-
-- **2021-10-11**  Optuna 3.0 Roadmap published for review. Please take a look at the [planned improvements to Optuna](https://github.com/optuna/optuna/wiki/Optuna-V3-Roadmap), and share your feedback in the github issues. PR contributions also welcome!
-
-- **2021-07-14** Please take a few minutes to fill in this survey, and let us know how you use Optuna now and what improvements you'd like.🤔
-All questions optional. 🙇‍♂️
-https://forms.gle/mCAttqxVg5oUifKV8
 
 ## Key Features
 
@@ -90,49 +79,6 @@ study = optuna.create_study()  # Create a new study.
 study.optimize(objective, n_trials=100)  # Invoke optimization of the objective function.
 ```
 
-## Examples
-
-Examples can be found in [optuna/optuna-examples](https://github.com/optuna/optuna-examples).
-
-## Integrations
-
-[Integrations modules](https://optuna.readthedocs.io/en/stable/tutorial/10_key_features/003_efficient_optimization_algorithms.html#integration-modules-for-pruning), which allow pruning, or early stopping, of unpromising trials are available for the following libraries:
-
-* [AllenNLP](https://github.com/optuna/optuna-examples/tree/main/allennlp)
-* [Catalyst](https://github.com/optuna/optuna-examples/tree/main/pytorch/catalyst_simple.py)
-* [Catboost](https://github.com/optuna/optuna-examples/tree/main/catboost/catboost_pruning.py)
-* [Chainer](https://github.com/optuna/optuna-examples/tree/main/chainer/chainer_integration.py)
-* FastAI ([V1](https://github.com/optuna/optuna-examples/tree/main/fastai/fastaiv1_simple.py), [V2](https://github.com/optuna/optuna-examples/tree/main/fastai/fastaiv2_simple.py))
-* [Keras](https://github.com/optuna/optuna-examples/tree/main/keras/keras_integration.py)
-* [LightGBM](https://github.com/optuna/optuna-examples/tree/main/lightgbm/lightgbm_integration.py)
-* [MXNet](https://github.com/optuna/optuna-examples/tree/main/mxnet/mxnet_integration.py)
-* [PyTorch](https://github.com/optuna/optuna-examples/tree/main/pytorch/pytorch_simple.py)
-* [PyTorch Ignite](https://github.com/optuna/optuna-examples/tree/main/pytorch/pytorch_ignite_simple.py)
-* [PyTorch Lightning](https://github.com/optuna/optuna-examples/tree/main/pytorch/pytorch_lightning_simple.py)
-* [TensorFlow](https://github.com/optuna/optuna-examples/tree/main/tensorflow/tensorflow_estimator_integration.py)
-* [tf.keras](https://github.com/optuna/optuna-examples/tree/main/tfkeras/tfkeras_integration.py)
-* [XGBoost](https://github.com/optuna/optuna-examples/tree/main/xgboost/xgboost_integration.py)
-
-
-## Web Dashboard (experimental)
-
-The new Web dashboard is under the development at [optuna-dashboard](https://github.com/optuna/optuna-dashboard).
-It is still experimental, but much better in many regards.
-Feature requests and bug reports welcome!
-
-| Manage studies | Visualize with interactive graphs |
-| -------------- | --------------------------------- |
-| ![manage-studies](https://user-images.githubusercontent.com/5564044/97099702-4107be80-16cf-11eb-9d97-f5ceec98ce52.gif) | ![optuna-realtime-graph](https://user-images.githubusercontent.com/5564044/97099797-66e19300-16d0-11eb-826c-6977e3941fb0.gif) |
-
-Install `optuna-dashboard` via pip:
-
-```
-$ pip install optuna-dashboard
-$ optuna-dashboard sqlite:///db.sqlite3
-...
-Listening on http://localhost:8080/
-Hit Ctrl-C to quit.
-```
 
 ## Installation
 
@@ -148,19 +94,64 @@ $ pip install optuna
 $ conda install -c conda-forge optuna
 ```
 
-Optuna supports Python 3.6 or newer.
+Optuna supports Python 3.7 or newer.
 
 Also, we also provide Optuna docker images on [DockerHub](https://hub.docker.com/r/optuna/optuna).
 
+
+## Examples
+
+Examples can be found in [optuna/optuna-examples](https://github.com/optuna/optuna-examples).
+
+## Integrations
+
+Optuna has integration features with various third-party libraries. Integrations can be found in [optuna/optuna-integration](https://github.com/optuna/optuna-integration) and the document is available [here](https://optuna-integration.readthedocs.io/en/stable/index.html). Integrations support libraries such as the following:
+
+* [Catalyst](https://github.com/optuna/optuna-examples/tree/main/pytorch/catalyst_simple.py)
+* [Catboost](https://github.com/optuna/optuna-examples/tree/main/catboost/catboost_pruning.py)
+* [Dask](https://github.com/optuna/optuna-examples/tree/main/dask/dask_simple.py)
+* [fastai (v2)](https://github.com/optuna/optuna-examples/tree/main/fastai/fastaiv2_simple.py)
+* [Keras](https://github.com/optuna/optuna-examples/tree/main/keras/keras_integration.py)
+* [LightGBM](https://github.com/optuna/optuna-examples/tree/main/lightgbm/lightgbm_integration.py)
+* [MLflow](https://github.com/optuna/optuna-examples/tree/main/mlflow/keras_mlflow.py)
+* [MXNet](https://github.com/optuna/optuna-examples/tree/main/mxnet/mxnet_integration.py)
+* [PyTorch](https://github.com/optuna/optuna-examples/tree/main/pytorch/pytorch_simple.py)
+* [PyTorch Ignite](https://github.com/optuna/optuna-examples/tree/main/pytorch/pytorch_ignite_simple.py)
+* [PyTorch Lightning](https://github.com/optuna/optuna-examples/tree/main/pytorch/pytorch_lightning_simple.py)
+* [TensorBoard](https://github.com/optuna/optuna-examples/tree/main/tensorboard/tensorboard_simple.py)
+* [TensorFlow](https://github.com/optuna/optuna-examples/tree/main/tensorflow/tensorflow_estimator_integration.py)
+* [tf.keras](https://github.com/optuna/optuna-examples/tree/main/tfkeras/tfkeras_integration.py)
+* [Weights & Biases](https://github.com/optuna/optuna-examples/tree/main/wandb/wandb_integration.py)
+* [XGBoost](https://github.com/optuna/optuna-examples/tree/main/xgboost/xgboost_integration.py)
+
+
+## Web Dashboard
+
+[Optuna Dashboard](https://github.com/optuna/optuna-dashboard) is a real-time web dashboard for Optuna.
+You can check the optimization history, hyperparameter importances, etc. in graphs and tables.
+You don't need to create a Python script to call [Optuna's visualization](https://optuna.readthedocs.io/en/stable/reference/visualization/index.html) functions.
+Feature requests and bug reports welcome!
+
+![optuna-dashboard](https://user-images.githubusercontent.com/5564044/204975098-95c2cb8c-0fb5-4388-abc4-da32f56cb4e5.gif)
+
+Install `optuna-dashboard` via pip:
+
+```
+$ pip install optuna-dashboard
+$ optuna-dashboard sqlite:///db.sqlite3
+...
+Listening on http://localhost:8080/
+Hit Ctrl-C to quit.
+```
+
+
 ## Communication
 
-- [GitHub Issues] for bug reports, feature requests and questions.
-- [Gitter] for interactive chat with developers.
-- [Stack Overflow] for questions.
+- [GitHub Discussions] for questions.
+- [GitHub Issues] for bug reports and feature requests.
 
+[GitHub Discussions]: https://github.com/optuna/optuna/discussions
 [GitHub issues]: https://github.com/optuna/optuna/issues
-[Gitter]: https://gitter.im/optuna/optuna
-[Stack Overflow]: https://stackoverflow.com/questions/tagged/optuna
 
 
 ## Contribution

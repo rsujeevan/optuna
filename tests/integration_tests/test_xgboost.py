@@ -1,12 +1,16 @@
-from collections import OrderedDict
-
 import numpy as np
 import pytest
-import xgboost as xgb
 
 import optuna
+from optuna._imports import try_import
 from optuna.integration.xgboost import XGBoostPruningCallback
-from optuna.testing.integration import DeterministicPruner
+from optuna.testing.pruners import DeterministicPruner
+
+
+with try_import():
+    import xgboost as xgb
+
+pytestmark = pytest.mark.integration
 
 
 def test_xgboost_pruning_callback_call() -> None:
@@ -15,7 +19,7 @@ def test_xgboost_pruning_callback_call() -> None:
     trial = study.ask()
     pruning_callback = XGBoostPruningCallback(trial, "validation-logloss")
     pruning_callback.after_iteration(
-        model=None, epoch=1, evals_log={"validation": OrderedDict({"logloss": [1.0]})}
+        model=None, epoch=1, evals_log={"validation": {"logloss": [1.0]}}
     )
 
     # The pruner is activated.
@@ -24,13 +28,12 @@ def test_xgboost_pruning_callback_call() -> None:
     pruning_callback = XGBoostPruningCallback(trial, "validation-logloss")
     with pytest.raises(optuna.TrialPruned):
         pruning_callback.after_iteration(
-            model=None, epoch=1, evals_log={"validation": OrderedDict({"logloss": [1.0]})}
+            model=None, epoch=1, evals_log={"validation": {"logloss": [1.0]}}
         )
 
 
 def test_xgboost_pruning_callback() -> None:
     def objective(trial: optuna.trial.Trial) -> float:
-
         dtrain = xgb.DMatrix(np.asarray([[1.0]]), label=[1.0])
         dtest = xgb.DMatrix(np.asarray([[1.0]]), label=[1.0])
 
@@ -57,7 +60,6 @@ def test_xgboost_pruning_callback() -> None:
 
 def test_xgboost_pruning_callback_cv() -> None:
     def objective(trial: optuna.trial.Trial) -> float:
-
         dtrain = xgb.DMatrix(np.ones((2, 1)), label=[1.0, 1.0])
         params = {
             "objective": "binary:logistic",

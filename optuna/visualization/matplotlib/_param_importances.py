@@ -1,25 +1,22 @@
-from collections import OrderedDict
+from __future__ import annotations
+
 from typing import Callable
-from typing import List
-from typing import Optional
 
 import numpy as np
 
-import optuna
 from optuna._experimental import experimental_func
 from optuna.importance._base import BaseImportanceEvaluator
 from optuna.logging import get_logger
 from optuna.study import Study
 from optuna.trial import FrozenTrial
-from optuna.trial import TrialState
-from optuna.visualization._utils import _check_plot_args
-from optuna.visualization._utils import _filter_nonfinite
+from optuna.visualization._param_importances import _get_importances_infos
+from optuna.visualization._param_importances import _ImportancesInfo
 from optuna.visualization.matplotlib._matplotlib_imports import _imports
 
 
 if _imports.is_successful():
     from optuna.visualization.matplotlib._matplotlib_imports import Axes
-    from optuna.visualization.matplotlib._matplotlib_imports import cm
+    from optuna.visualization.matplotlib._matplotlib_imports import Figure
     from optuna.visualization.matplotlib._matplotlib_imports import plt
 
 
@@ -32,10 +29,10 @@ AXES_PADDING_RATIO = 1.05
 @experimental_func("2.2.0")
 def plot_param_importances(
     study: Study,
-    evaluator: Optional[BaseImportanceEvaluator] = None,
-    params: Optional[List[str]] = None,
+    evaluator: BaseImportanceEvaluator | None = None,
+    params: list[str] | None = None,
     *,
-    target: Optional[Callable[[FrozenTrial], float]] = None,
+    target: Callable[[FrozenTrial], float] | None = None,
     target_name: str = "Objective Value",
 ) -> "Axes":
     """Plot hyperparameter importances with Matplotlib.
@@ -80,70 +77,67 @@ def plot_param_importances(
         target:
             A function to specify the value to display. If it is :obj:`None` and ``study`` is being
             used for single-objective optimization, the objective values are plotted.
+            For multi-objective optimization, all objectives will be plotted if ``target``
+            is :obj:`None`.
 
             .. note::
-                Specify this argument if ``study`` is being used for multi-objective
-                optimization. For example, to get the hyperparameter importance of the first
-                objective, use ``target=lambda t: t.values[0]`` for the target parameter.
+                This argument can be used to specify which objective to plot if ``study`` is being
+                used for multi-objective optimization. For example, to get only the hyperparameter
+                importance of the first objective, use ``target=lambda t: t.values[0]`` for the
+                target parameter.
         target_name:
-            Target's name to display on the axis label.
+            Target's name to display on the axis label. Names set via
+            :meth:`~optuna.study.Study.set_metric_names` will be used if ``target`` is :obj:`None`,
+            overriding this argument.
 
     Returns:
         A :class:`matplotlib.axes.Axes` object.
     """
 
     _imports.check()
-    _check_plot_args(study, target, target_name)
-    return _get_param_importance_plot(study, evaluator, params, target, target_name)
+    importances_infos = _get_importances_infos(study, evaluator, params, target, target_name)
+    return _get_importances_plot(importances_infos)
 
 
-def _get_param_importance_plot(
-    study: Study,
-    evaluator: Optional[BaseImportanceEvaluator] = None,
-    params: Optional[List[str]] = None,
-    target: Optional[Callable[[FrozenTrial], float]] = None,
-    target_name: str = "Objective Value",
-) -> "Axes":
-
+def _get_importances_plot(infos: tuple[_ImportancesInfo, ...]) -> "Axes":
     # Set up the graph style.
     plt.style.use("ggplot")  # Use ggplot style sheet for similar outputs to plotly.
     fig, ax = plt.subplots()
-    ax.set_title("Hyperparameter Importances")
-    ax.set_xlabel(f"Importance for {target_name}")
+    ax.set_title("Hyperparameter Importances", loc="left")
+    ax.set_xlabel("Hyperparameter Importance")
     ax.set_ylabel("Hyperparameter")
+    height = 0.8 / len(infos)  # Default height split between objectives.
 
-    # Prepare data for plotting.
-    # Importances cannot be evaluated without completed trials.
-    # Return an empty figure for consistency with other visualization functions.
-    trials = _filter_nonfinite(
-        study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target
-    )
-    if len(trials) == 0:
-        _logger.warning("Study instance does not contain completed trials.")
-        return ax
+    for objective_id, info in enumerate(infos):
+        param_names = info.param_names
+        pos = np.arange(len(param_names))
+        offset = height * objective_id
+        importance_values = info.importance_values
 
-    importances = optuna.importance.get_param_importances(
-        study, evaluator=evaluator, params=params, target=target
-    )
+        if not importance_values:
+            continue
 
-    importances = OrderedDict(reversed(list(importances.items())))
-    importance_values = list(importances.values())
-    param_names = list(importances.keys())
-    pos = np.arange(len(param_names))
+        # Draw horizontal bars.
+        ax.barh(
+            pos + offset,
+            importance_values,
+            height=height,
+            align="center",
+            label=info.target_name,
+            color=plt.get_cmap("tab20c")(objective_id),
+        )
 
-    # Draw horizontal bars.
-    ax.barh(
-        pos,
-        importance_values,
-        align="center",
-        color=cm.get_cmap("tab20c")(0),
-        tick_label=param_names,
-    )
+        _set_bar_labels(info, fig, ax, offset)
+        ax.set_yticks(pos + offset / 2, param_names)
 
+    ax.legend(loc="best")
+    return ax
+
+
+def _set_bar_labels(info: _ImportancesInfo, fig: "Figure", ax: "Axes", offset: float) -> None:
     renderer = fig.canvas.get_renderer()
-    for idx, val in enumerate(importance_values):
-        label = f" {val:.2f}" if val >= 0.01 else " <0.01"
-        text = ax.text(val, idx, label, va="center")
+    for idx, (val, label) in enumerate(zip(info.importance_values, info.importance_labels)):
+        text = ax.text(val, idx + offset, label, va="center")
 
         # Sometimes horizontal axis needs to be re-scaled
         # to avoid text going over plot area.
@@ -154,5 +148,3 @@ def _get_param_importance_plot(
 
         if bbox_xmax > plot_xmax:
             ax.set_xlim(xmax=AXES_PADDING_RATIO * bbox_xmax)
-
-    return ax

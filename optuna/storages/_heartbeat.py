@@ -1,8 +1,12 @@
 import abc
 import copy
+from threading import Event
+from threading import Thread
+from types import TracebackType
 from typing import Callable
 from typing import List
 from typing import Optional
+from typing import Type
 
 import optuna
 from optuna._experimental import experimental_func
@@ -23,8 +27,7 @@ class BaseHeartbeat(metaclass=abc.ABCMeta):
     and :class:`~optuna.storages._heartbeat.BaseHeartbeat`.
 
     .. seealso::
-        See :class:`~optuna.storages.RDBStorage` and :class:`~optuna.storages.RedisStorage`, where
-        those backends support heartbeat.
+        See :class:`~optuna.storages.RDBStorage`, where the backend supports heartbeat.
     """
 
     @abc.abstractmethod
@@ -68,6 +71,76 @@ class BaseHeartbeat(metaclass=abc.ABCMeta):
         raise NotImplementedError()
 
 
+class BaseHeartbeatThread(metaclass=abc.ABCMeta):
+    def __enter__(self) -> None:
+        self.start()
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[Exception]],
+        exc_value: Optional[Exception],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        self.join()
+
+    @abc.abstractmethod
+    def start(self) -> None:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def join(self) -> None:
+        raise NotImplementedError()
+
+
+class NullHeartbeatThread(BaseHeartbeatThread):
+    def __init__(self) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def join(self) -> None:
+        pass
+
+
+class HeartbeatThread(BaseHeartbeatThread):
+    def __init__(self, trial_id: int, heartbeat: BaseHeartbeat) -> None:
+        self._trial_id = trial_id
+        self._heartbeat = heartbeat
+        self._thread: Optional[Thread] = None
+        self._stop_event: Optional[Event] = None
+
+    def start(self) -> None:
+        self._stop_event = Event()
+        self._thread = Thread(
+            target=self._record_heartbeat, args=(self._trial_id, self._heartbeat, self._stop_event)
+        )
+        self._thread.start()
+
+    def join(self) -> None:
+        assert self._stop_event is not None
+        assert self._thread is not None
+        self._stop_event.set()
+        self._thread.join()
+
+    @staticmethod
+    def _record_heartbeat(trial_id: int, heartbeat: BaseHeartbeat, stop_event: Event) -> None:
+        heartbeat_interval = heartbeat.get_heartbeat_interval()
+        assert heartbeat_interval is not None
+        while True:
+            heartbeat.record_heartbeat(trial_id)
+            if stop_event.wait(timeout=heartbeat_interval):
+                return
+
+
+def get_heartbeat_thread(trial_id: int, storage: BaseStorage) -> BaseHeartbeatThread:
+    if is_heartbeat_enabled(storage):
+        assert isinstance(storage, BaseHeartbeat)
+        return HeartbeatThread(trial_id, storage)
+    else:
+        return NullHeartbeatThread()
+
+
 @experimental_func("2.9.0")
 def fail_stale_trials(study: "optuna.Study") -> None:
     """Fail stale trials and run their failure callbacks.
@@ -93,8 +166,12 @@ def fail_stale_trials(study: "optuna.Study") -> None:
 
     failed_trial_ids = []
     for trial_id in storage._get_stale_trial_ids(study._study_id):
-        if storage.set_trial_state_values(trial_id, state=TrialState.FAIL):
-            failed_trial_ids.append(trial_id)
+        try:
+            if storage.set_trial_state_values(trial_id, state=TrialState.FAIL):
+                failed_trial_ids.append(trial_id)
+        except RuntimeError:
+            # If another process fails the trial, the storage raises RuntimeError.
+            pass
 
     failed_trial_callback = storage.get_failed_trial_callback()
     if failed_trial_callback is not None:

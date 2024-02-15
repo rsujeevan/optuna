@@ -1,37 +1,47 @@
 import datetime
 from typing import Any
+from typing import cast
 from typing import Dict
 from typing import List
+from typing import Mapping
 from typing import Optional
+from typing import overload
 from typing import Sequence
-from typing import Union
 import warnings
 
 from optuna import distributions
 from optuna import logging
+from optuna._convert_positional_args import convert_positional_args
 from optuna._deprecated import deprecated_func
+from optuna._typing import JSONSerializable
 from optuna.distributions import _convert_old_distribution_to_new_distribution
 from optuna.distributions import BaseDistribution
+from optuna.distributions import CategoricalChoiceType
 from optuna.distributions import CategoricalDistribution
 from optuna.distributions import FloatDistribution
 from optuna.distributions import IntDistribution
+from optuna.trial._base import _SUGGEST_INT_POSITIONAL_ARGS
 from optuna.trial._base import BaseTrial
 from optuna.trial._state import TrialState
 
 
 _logger = logging.get_logger(__name__)
-_suggest_deprecated_msg = "Use :func:`~optuna.trial.FrozenTrial.suggest_float` instead."
-
-CategoricalChoiceType = Union[None, bool, int, float, str]
+_suggest_deprecated_msg = "Use suggest_float{args} instead."
 
 
 class FrozenTrial(BaseTrial):
     """Status and results of a :class:`~optuna.trial.Trial`.
 
-    This object has the same methods as :class:`~optuna.trial.Trial`, and it suggests the same
-    parameter values as in :attr:`params`; it does not sample any value from a distribution.
-    In contrast to :class:`~optuna.trial.Trial`,
-    :class:`~optuna.trial.FrozenTrial` does not depend on :class:`~optuna.study.Study`, and it is
+    An object of this class has the same methods as :class:`~optuna.trial.Trial`, but is not
+    associated with, nor has any references to a :class:`~optuna.study.Study`.
+
+    It is therefore not possible to make persistent changes to a storage from this object by
+    itself, for instance by using :func:`~optuna.trial.FrozenTrial.set_user_attr`.
+
+    It will suggest the parameter values stored in :attr:`params` and will not sample values from
+    any distributions.
+
+    It can be passed to objective functions (see :func:`~optuna.study.Study.optimize`) and is
     useful for deploying optimization results.
 
     Example:
@@ -115,12 +125,16 @@ class FrozenTrial(BaseTrial):
             Datetime where the :class:`~optuna.trial.Trial` finished.
         params:
             Dictionary that contains suggested parameters.
+        distributions:
+            Dictionary that contains the distributions of :attr:`params`.
         user_attrs:
             Dictionary that contains the attributes of the :class:`~optuna.trial.Trial` set with
             :func:`optuna.trial.Trial.set_user_attr`.
+        system_attrs:
+            Dictionary that contains the attributes of the :class:`~optuna.trial.Trial` set with
+            :func:`optuna.trial.Trial.set_system_attr`.
         intermediate_values:
             Intermediate objective values set with :func:`optuna.trial.Trial.report`.
-
     """
 
     def __init__(
@@ -139,7 +153,6 @@ class FrozenTrial(BaseTrial):
         *,
         values: Optional[Sequence[float]] = None,
     ) -> None:
-
         self._number = number
         self.state = state
         self._values: Optional[List[float]] = None
@@ -158,48 +171,27 @@ class FrozenTrial(BaseTrial):
         self._distributions = distributions
         self._trial_id = trial_id
 
-    # Ordered list of fields required for `__repr__`, `__hash__` and dataframe creation.
-    # TODO(hvy): Remove this list in Python 3.7 as the order of `self.__dict__` is preserved.
-    _ordered_fields = [
-        "number",
-        "_values",
-        "datetime_start",
-        "datetime_complete",
-        "params",
-        "_distributions",
-        "user_attrs",
-        "system_attrs",
-        "intermediate_values",
-        "_trial_id",
-        "state",
-    ]
-
     def __eq__(self, other: Any) -> bool:
-
         if not isinstance(other, FrozenTrial):
             return NotImplemented
         return other.__dict__ == self.__dict__
 
     def __lt__(self, other: Any) -> bool:
-
         if not isinstance(other, FrozenTrial):
             return NotImplemented
 
         return self.number < other.number
 
     def __le__(self, other: Any) -> bool:
-
         if not isinstance(other, FrozenTrial):
             return NotImplemented
 
         return self.number <= other.number
 
     def __hash__(self) -> int:
-
-        return hash(tuple(getattr(self, field) for field in self._ordered_fields))
+        return hash(tuple(getattr(self, field) for field in self.__dict__))
 
     def __repr__(self) -> str:
-
         return "{cls}({kwargs})".format(
             cls=self.__class__.__name__,
             kwargs=", ".join(
@@ -207,7 +199,7 @@ class FrozenTrial(BaseTrial):
                     field=field if not field.startswith("_") else field[1:],
                     value=repr(getattr(self, field)),
                 )
-                for field in self._ordered_fields
+                for field in self.__dict__
             )
             + ", value=None",
         )
@@ -221,31 +213,55 @@ class FrozenTrial(BaseTrial):
         step: Optional[float] = None,
         log: bool = False,
     ) -> float:
-
         return self._suggest(name, FloatDistribution(low, high, log=log, step=step))
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args=""))
     def suggest_uniform(self, name: str, low: float, high: float) -> float:
-
         return self.suggest_float(name, low, high)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., log=True)"))
     def suggest_loguniform(self, name: str, low: float, high: float) -> float:
-
         return self.suggest_float(name, low, high, log=True)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., step=...)"))
     def suggest_discrete_uniform(self, name: str, low: float, high: float, q: float) -> float:
-
         return self.suggest_float(name, low, high, step=q)
 
-    def suggest_int(self, name: str, low: int, high: int, step: int = 1, log: bool = False) -> int:
+    @convert_positional_args(previous_positional_arg_names=_SUGGEST_INT_POSITIONAL_ARGS)
+    def suggest_int(
+        self, name: str, low: int, high: int, *, step: int = 1, log: bool = False
+    ) -> int:
         return int(self._suggest(name, IntDistribution(low, high, log=log, step=step)))
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float:
+        ...
+
+    @overload
+    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str:
+        ...
+
+    @overload
+    def suggest_categorical(
+        self, name: str, choices: Sequence[CategoricalChoiceType]
+    ) -> CategoricalChoiceType:
+        ...
 
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
     ) -> CategoricalChoiceType:
-
         return self._suggest(name, CategoricalDistribution(choices=choices))
 
     def report(self, value: float, step: int) -> None:
@@ -284,15 +300,13 @@ class FrozenTrial(BaseTrial):
         return False
 
     def set_user_attr(self, key: str, value: Any) -> None:
-
         self._user_attrs[key] = value
 
+    @deprecated_func("3.1.0", "5.0.0")
     def set_system_attr(self, key: str, value: Any) -> None:
-
         self._system_attrs[key] = value
 
     def _validate(self) -> None:
-
         if self.state != TrialState.WAITING and self.datetime_start is None:
             raise ValueError(
                 "`datetime_start` is supposed to be set when the trial state is not waiting."
@@ -328,7 +342,6 @@ class FrozenTrial(BaseTrial):
                 )
 
     def _suggest(self, name: str, distribution: BaseDistribution) -> Any:
-
         if name not in self._params:
             raise ValueError(
                 "The value of the parameter '{}' is not found. Please set it at "
@@ -352,17 +365,14 @@ class FrozenTrial(BaseTrial):
 
     @property
     def number(self) -> int:
-
         return self._number
 
     @number.setter
     def number(self, value: int) -> None:
-
         self._number = value
 
     @property
     def value(self) -> Optional[float]:
-
         if self._values is not None:
             if len(self._values) > 1:
                 raise RuntimeError(
@@ -373,7 +383,6 @@ class FrozenTrial(BaseTrial):
 
     @value.setter
     def value(self, v: Optional[float]) -> None:
-
         if self._values is not None:
             if len(self._values) > 1:
                 raise RuntimeError(
@@ -389,11 +398,9 @@ class FrozenTrial(BaseTrial):
     # defined to pass the mypy.
     # See https://github.com/python/mypy/issues/3004#issuecomment-726022329.
     def _get_values(self) -> Optional[List[float]]:
-
         return self._values
 
     def _set_values(self, v: Optional[Sequence[float]]) -> None:
-
         if v is not None:
             self._values = list(v)
         else:
@@ -403,54 +410,43 @@ class FrozenTrial(BaseTrial):
 
     @property
     def datetime_start(self) -> Optional[datetime.datetime]:
-
         return self._datetime_start
 
     @datetime_start.setter
     def datetime_start(self, value: Optional[datetime.datetime]) -> None:
-
         self._datetime_start = value
 
     @property
     def params(self) -> Dict[str, Any]:
-
         return self._params
 
     @params.setter
     def params(self, params: Dict[str, Any]) -> None:
-
         self._params = params
 
     @property
     def distributions(self) -> Dict[str, BaseDistribution]:
-        """Dictionary that contains the distributions of :attr:`params`."""
-
         return self._distributions
 
     @distributions.setter
     def distributions(self, value: Dict[str, BaseDistribution]) -> None:
-
         self._distributions = value
 
     @property
     def user_attrs(self) -> Dict[str, Any]:
-
         return self._user_attrs
 
     @user_attrs.setter
     def user_attrs(self, value: Dict[str, Any]) -> None:
-
         self._user_attrs = value
 
     @property
     def system_attrs(self) -> Dict[str, Any]:
-
         return self._system_attrs
 
     @system_attrs.setter
-    def system_attrs(self, value: Dict[str, Any]) -> None:
-
-        self._system_attrs = value
+    def system_attrs(self, value: Mapping[str, JSONSerializable]) -> None:
+        self._system_attrs = cast(Dict[str, Any], value)
 
     @property
     def last_step(self) -> Optional[int]:
